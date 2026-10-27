@@ -12,7 +12,7 @@ const MODES=['생방송','재송출','녹화','녹화송출'];
 const SURVEYS=['인식형','리뷰형','분석형','적용형'];
 const DOW=['월','화','수','목','금'];
 const CATS=['순환기','내분비','호흡기','소화기','근골격','신경·정신','기타'];
-const KIND={new:'신규 접수',changed:'신청 변경',status:'상태 변경'};
+const KIND={new:'신규 접수',changed:'신청 변경',status:'상태 변경',assign:'세미나 배정'};
 /* 주요 제약사 목록(샘플) — 공식 등록 목록으로 교체하세요 */
 const PHARMA=['GC녹십자','HK이노엔','JW중외제약','SK케미칼','경동제약','경보제약','고려제약','광동제약','구주제약','국제약품','대우제약','대웅바이오','대웅제약','대원제약','대한뉴팜','대한약품','대화제약','동구바이오제약','동국제약','동성제약','동아에스티','동화약품','마더스제약','명인제약','바이넥스','보령','부광약품','비씨월드제약','삼아제약','삼일제약','삼진제약','삼천당제약','서울제약','셀트리온제약','신일제약','신풍제약','아주약품','안국약품','알리코제약','알보젠코리아','영진약품','우리들제약','위더스제약','유나이티드제약','유니메드제약','유한양행','이연제약','일동제약','일양약품','제일약품','조아제약','종근당','종근당바이오','진양제약','코오롱제약','테라젠이텍스','하나제약','한국글로벌제약','한국맥널티','한국유나이티드제약','한국콜마','한국파마','한국프라임제약','한독','한림제약','한미약품','한올바이오파마','한풍제약','현대약품','환인제약','휴온스','휴텍스제약',
 '길리어드사이언스코리아','바이엘코리아','사노피-아벤티스 코리아','암젠코리아','한국MSD','한국노바티스','한국노보노디스크제약','한국다케다제약','한국로슈','한국릴리','한국먼디파마','한국메나리니','한국베링거인겔하임','한국비아트리스','한국세르비에','한국아스텔라스제약','한국아스트라제네카','한국애브비','한국얀센','한국에자이','한국오츠카제약','한국유씨비제약','한국쿄와기린','한국페링제약','한국화이자제약','한국BMS제약','한국GSK','한국머크'];
@@ -20,7 +20,7 @@ const ADMMAP={time:'time_text',cid:'cid',surveyDist:'survey_dist',vendor:'vendor
 const ADMNUM=new Set(['applicants','attendees','surveyParticipants','basePrice','surveyPay','surveyBill','finalPrice']);
 
 let sb=null;
-const S={mem:{list:[],q:'',role:'all',st:'all',loaded:false},memDrawer:null,me:null,user:null,view:'login',tab:'cal',y:0,m:0,apps:{},locks:new Set(),sel:null,mode:null,form:null,editing:false,confirmCancel:false,notis:[],chan:null,err:'',busy:false,
+const S={vendors:[],vpoll:null,mem:{list:[],q:'',role:'all',st:'all',loaded:false},memDrawer:null,me:null,user:null,view:'login',tab:'cal',y:0,m:0,apps:{},locks:new Set(),sel:null,mode:null,form:null,editing:false,confirmCancel:false,notis:[],chan:null,err:'',busy:false,
   customCos:[],su:{coMode:'search',coQ:'',coSel:''},al:{scope:'month',y:0,m:0,from:'',to:'',q:'',st:'all'},drawer:null,pref:null};
 
 const $=(id)=>document.getElementById(id);
@@ -31,6 +31,7 @@ const todayStr=ymd(new Date());
 const won=(v)=>Number(v).toLocaleString('ko-KR')+'원';
 const fmtN=(v)=>(v===''||v==null||isNaN(Number(v)))?String(v==null?'':v):Number(v).toLocaleString('ko-KR');
 const isAdmin=()=>!!(S.me&&S.me.role==='admin');
+const isVendor=()=>!!(S.me&&S.me.role==='vendor');
 const idEmail=(id)=>id+'@'+(CFG.LOGIN_EMAIL_DOMAIN||'seminar.example.com');
 const nOrBlank=(v)=>(v===''||v==null)?'':(isNaN(Number(v))?v:Number(v));
 (function(){const d=new Date();d.setMonth(d.getMonth()+1);S.y=S.al.y=d.getFullYear();S.m=S.al.m=d.getMonth();})();
@@ -71,7 +72,7 @@ function fromRow(r){
   const adm={};Object.keys(ADMMAP).forEach(k=>{const v=ad[ADMMAP[k]];adm[k]=v==null?'':String(v);});
   return{id:r.id,key:r.slot_key,date:r.event_date,meal:r.meal,slot:r.slot,company:r.company,userId:r.user_id,applicant:r.applicant||'',status:r.status,acad:r.acad,type:r.type,mode:r.mode,cat:r.category||'',
     leadItem:r.lead_item||'',item:r.item||'',title:r.title,topic:r.topic||'',speakers:Array.isArray(r.speakers)?r.speakers:[],recruit:r.recruit==null?'':String(r.recruit),surveyOn:!!r.survey_on,survey:r.survey||'',
-    pm:r.pm||'',adjustNote:r.adjust_note||'',adminRegistered:!!r.admin_registered,priceList:r.price_list,adm};
+    pm:r.pm||'',adjustNote:r.adjust_note||'',adminRegistered:!!r.admin_registered,priceList:r.price_list,vendorId:r.vendor_id==null?null:r.vendor_id,adm};
 }
 function toRow(f,key){
   const [date,meal,n]=key.split('_');const p=calcPrice(f);
@@ -89,8 +90,26 @@ function errMsg(e,fallback){
 /* ---------- data access ---------- */
 let refreshT=null;
 function scheduleRefresh(){clearTimeout(refreshT);refreshT=setTimeout(refreshApps,250);}
+function fromVendorRow(r){
+  const adm={};Object.keys(ADMMAP).forEach(k=>{adm[k]='';});
+  adm.time=r.time_text||'';adm.cid=r.cid||'';adm.channel=r.channel||'';adm.manager=r.manager||'';adm.pmInternal=r.pm_internal||'';adm.surveyDist=r.survey_dist||'';adm.replay=r.replay||'';
+  return{id:r.slot_key,key:r.slot_key,date:r.event_date,meal:r.meal,slot:r.slot,company:r.company,userId:null,applicant:'',status:r.status,acad:r.acad,type:r.type,mode:r.mode,cat:r.category||'',
+    leadItem:r.lead_item||'',item:r.item||'',title:r.title,topic:r.topic||'',speakers:Array.isArray(r.speakers)?r.speakers:[],recruit:r.recruit==null?'':String(r.recruit),surveyOn:!!r.survey_on,survey:r.survey||'',
+    pm:r.pm||'',adjustNote:r.adjust_note||'',adminRegistered:false,priceList:null,vendorId:null,adm};
+}
+async function loadVendors(){const r=await sb.from('vendors').select('*').order('name');if(!r.error)S.vendors=r.data;}
+const vendorName=(id)=>{const v=S.vendors.find(x=>x.id===id);return v?v.name:'';};
 async function refreshApps(){
   if(!S.me)return;
+  if(isVendor()){
+    const [a,l]=await Promise.all([sb.rpc('vendor_seminars'),sb.from('slot_locks').select('slot_key').limit(10000)]);
+    if(a.error||l.error){toast('일정 데이터를 불러오지 못했습니다. 새로고침해 주세요.');return;}
+    S.apps={};a.data.forEach(r=>{S.apps[r.slot_key]=fromVendorRow(r);});
+    S.locks=new Set(l.data.map(x=>x.slot_key));
+    if(S.view!=='app')return;
+    if(S.tab==='cal'){renderCal();renderSummary();if(S.sel)selectSlot(S.sel);}else if(S.tab==='mine')renderMine();
+    return;
+  }
   const sel=isAdmin()?'*, application_admin(*)':'*';
   const [a,l]=await Promise.all([sb.from('applications').select(sel).order('event_date').limit(5000),sb.from('slot_locks').select('slot_key').limit(10000)]);
   if(a.error||l.error){toast('일정 데이터를 불러오지 못했습니다. 새로고침해 주세요.');return;}
@@ -119,6 +138,7 @@ function subscribe(){
       const n=p.new;alertNew({id:n.id,text:n.text,key:n.slot_key,kind:n.kind});loadNotis();});
   if(isAdmin())ch=ch.on('postgres_changes',{event:'*',schema:'public',table:'application_admin'},scheduleRefresh);
   S.chan=ch.subscribe();
+  clearInterval(S.vpoll);if(isVendor())S.vpoll=setInterval(()=>{if(!document.hidden)refreshApps();},60000);
 }
 
 /* ---------- alerts: 화면 팝업 · 알림음 · 윈도우(브라우저) 알림 ---------- */
@@ -150,8 +170,8 @@ function renderTop(){
   if(S.me){
     const unread=S.notis.filter(n=>!n.read).length;
     const tab=(id,label,extra)=>'<button type="button" data-tab="'+id+'"'+(S.tab===id?' aria-current="page"':'')+'>'+label+(extra||'')+'</button>';
-    h+='<nav class="tabs" aria-label="메뉴">'+(APP==='admin'?tab('cal','일정 관리')+tab('all','전체 신청 현황')+tab('members','회원 관리'):tab('cal','일정 신청')+tab('mine','내 신청 현황'))+tab('noti','알림',unread?'<span class="badge">'+unread+'</span>':'')+'</nav>';
-    h+='<div class="who"><span class="co">'+esc(S.me.company)+'</span><span>'+esc(S.me.name)+' 님</span>'+(isAdmin()?'<span class="role">관리자</span>':'')+'<button type="button" class="btn-ghost-bar" data-act="logout">로그아웃</button></div>';
+    h+='<nav class="tabs" aria-label="메뉴">'+(APP==='admin'?tab('cal','일정 관리')+tab('all','전체 신청 현황')+tab('members','회원 관리'):isVendor()?tab('cal','배정 일정')+tab('mine','배정 목록'):tab('cal','일정 신청')+tab('mine','내 신청 현황'))+tab('noti','알림',unread?'<span class="badge">'+unread+'</span>':'')+'</nav>';
+    h+='<div class="who"><span class="co">'+esc(S.me.company)+'</span><span>'+esc(S.me.name)+' 님</span>'+(isAdmin()?'<span class="role">관리자</span>':'')+(isVendor()?'<span class="role" style="border-color:#60A5FA;color:#BFDBFE">외주사</span>':'')+'<button type="button" class="btn-ghost-bar" data-act="logout">로그아웃</button></div>';
   }
   $('topbar').innerHTML=h;
 }
@@ -252,10 +272,11 @@ async function doSignup(){
 }
 function startSession(p){
   S.me=p;S.err='';S.view='app';S.tab='cal';S.sel=null;S.mode=null;S.apps={};S.locks=new Set();
-  renderTop();renderApp();loadPrices();refreshApps();loadNotis();subscribe();
+  renderTop();renderApp();if(!isVendor())loadPrices();if(isAdmin())loadVendors().then(()=>{if(S.tab==='all')renderLedger();});refreshApps();loadNotis();subscribe();
 }
 async function logout(){
   if(S.chan){sb.removeChannel(S.chan);S.chan=null;}
+  clearInterval(S.vpoll);
   await sb.auth.signOut();
   S.me=null;S.view='login';S.apps={};S.notis=[];S.err='';S.drawer=null;$('drawerHost').innerHTML='';renderTop();renderLogin();
 }
@@ -263,8 +284,8 @@ async function logout(){
 /* ---------- calendar ---------- */
 function renderApp(){
   if(S.tab==='cal'){
-    $('main').innerHTML='<div class="toolbar"><div><h1>'+(APP==='admin'?'라이브세미나 · 웹심포지움 일정 관리':'라이브세미나 · 웹심포지움 일정 신청')+'</h1>'
-    +'<p class="sub">점심 · 저녁 각 5개 슬롯 중 위 3개는 신청 가능, 아래 2개는 관리자 등록 슬롯입니다.'+(APP==='admin'?' 슬롯을 눌러 상태를 바꾸거나 직접 등록하세요.':' 타사 일정은 ‘세미나 확정’으로만 표시됩니다.')+'</p></div>'
+    $('main').innerHTML='<div class="toolbar"><div><h1>'+(APP==='admin'?'라이브세미나 · 웹심포지움 일정 관리':isVendor()?esc(S.me.company)+' 배정 세미나 일정':'라이브세미나 · 웹심포지움 일정 신청')+'</h1>'
+    +'<p class="sub">'+(isVendor()?'외주사 계정은 세미나를 신청할 수 없으며, 배정된 세미나만 상세 내용이 표시됩니다. 다른 일정은 흐리게 가려집니다.':'점심 · 저녁 각 5개 슬롯 중 위 3개는 신청 가능, 아래 2개는 관리자 등록 슬롯입니다.'+(APP==='admin'?' 슬롯을 눌러 상태를 바꾸거나 직접 등록하세요.':' 타사 일정은 ‘세미나 확정’으로만 표시됩니다.'))+'</p></div>'
     +'<div class="monthnav"><button type="button" class="iconbtn" data-act="prevM" aria-label="이전 달"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>'
     +'<div class="m" id="mlabel"></div>'
     +'<button type="button" class="iconbtn" data-act="nextM" aria-label="다음 달"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg></button></div></div>'
@@ -279,13 +300,13 @@ function renderApp(){
 }
 function renderLegend(){
   const it=(k,ch,l)=>'<span><span class="pill p-'+k+'">'+ch+'</span>'+l+'</span>';
-  $('legend').innerHTML='<b>범례</b>'+it('empty','+','빈자리')+it('req','신','신청')+it('rev','검','검토중')+it('ok','확','확정')+it('adj','조','조정')+(APP==='admin'?'':it('oth','·','세미나 확정(타사)'))+it('aempty','–','관리자 등록 슬롯')
+  $('legend').innerHTML='<b>범례</b>'+it('empty','+','빈자리')+it('req','신','신청')+it('rev','검','검토중')+it('ok','확','확정')+it('adj','조','조정')+(APP==='admin'?'':isVendor()?'<span><span class="pill p-oth">·</span><span class="blurtxt">■■ ■■■</span>배정되지 않은 일정(비공개)</span>':it('oth','·','세미나 확정(타사)'))+it('aempty','–','관리자 등록 슬롯')
    +'<span><span class="tag zoom">줌</span>줌 라이브세미나</span><span><span class="tag site">현장</span>현장 라이브세미나</span><span><span class="tag sympo">심포</span>웹심포지움</span><span><span class="tag na">비학술</span>비학술</span><span><span class="tag adm">관리자</span>관리자 등록</span>';
 }
 function renderSummary(){
   const el=$('summary');if(!el)return;
   const c={req:0,rev:0,ok:0,adj:0};Object.values(S.apps).forEach(a=>{if(c[a.status]!=null)c[a.status]++;});
-  el.innerHTML=['req','rev','ok','adj'].map(k=>'<div class="sum"><span class="dot p-'+k+'">'+ST[k].ch+'</span><div><div class="l">'+(isAdmin()?'전체 ':'내 회사 ')+ST[k].label+'</div><div class="n">'+c[k]+'<span style="font-size:12px;font-weight:400;color:var(--ink-3)"> 건</span></div></div></div>').join('');
+  el.innerHTML=['req','rev','ok','adj'].map(k=>'<div class="sum"><span class="dot p-'+k+'">'+ST[k].ch+'</span><div><div class="l">'+(isAdmin()?'전체 ':isVendor()?'배정 ':'내 회사 ')+ST[k].label+'</div><div class="n">'+c[k]+'<span style="font-size:12px;font-weight:400;color:var(--ink-3)"> 건</span></div></div></div>').join('');
 }
 function weeksOf(y,m){
   const last=new Date(y,m+1,0).getDate();const weeks=[];let cur=null;
@@ -297,14 +318,16 @@ function bar(ds,meal,n,past){
   const key=ds+'_'+meal+'_'+n;const a=S.apps[key];const aslot=n>=4;const taken=S.locks.has(key);
   let k,ch,text,tags='',na='',dis=false,title;
   if(a){
-    k=a.status;ch=ST[a.status].ch;text=(isAdmin()?a.company+' · ':'')+a.title;
+    k=a.status;ch=ST[a.status].ch;text=(isAdmin()||isVendor()?a.company+' · ':'')+a.title;
     if(aslot||a.adminRegistered)tags+='<span class="tag adm">관리자</span>';
     tags+=typeTag(a.type);if(a.acad==='비학술')na='<span class="tag na">비학술</span>';
     title=slotLabel(key)+' · '+ST[a.status].label+' · '+a.type+' · '+a.title;
+  }else if(taken&&isVendor()){
+    return '<button type="button" class="bar k-oth k-blur'+(n===4?' a4':'')+'" disabled title="배정되지 않은 일정" aria-label="'+esc(slotLabel(key))+' · 배정되지 않은 일정(비공개)"><span class="pill">·</span><span class="t blurtxt" aria-hidden="true">■■■■ ■■■ ■■■■■</span></button>';
   }else if(taken){k='oth';ch='·';text='세미나 확정';title=slotLabel(key)+' · 세미나 확정';}
   else if(aslot){k='aempty';ch='–';text='관리자 등록 슬롯';dis=!isAdmin()||past;title=slotLabel(key)+' · 관리자 등록 슬롯';}
   else if(past){k='past';ch='–';text='마감';dis=!isAdmin();title=slotLabel(key)+' · 지난 날짜';}
-  else{k='empty';ch='+';text='빈자리';title=slotLabel(key)+' · 빈자리, 신청 가능';}
+  else{k='empty';ch='+';text='빈자리';dis=isVendor();title=slotLabel(key)+(isVendor()?' · 빈자리':' · 빈자리, 신청 가능');}
   return '<button type="button" class="bar k-'+k+(n===4?' a4':'')+(S.sel===key?' sel':'')+'" data-key="'+key+'"'+(dis?' disabled':'')+' title="'+esc(title)+'" aria-label="'+esc(title)+'"><span class="pill">'+ch+'</span>'+tags+'<span class="t">'+esc(text)+'</span>'+na+'</button>';
 }
 function renderCal(){
@@ -317,7 +340,7 @@ function renderCal(){
       if(!dt){h+='<div class="day off"></div>';return;}
       const ds=ymd(dt);const past=ds<todayStr;
       let free=0;['L','D'].forEach(m=>{for(let n=1;n<=3;n++){const k=ds+'_'+m+'_'+n;if(!S.apps[k]&&!S.locks.has(k)&&!past)free++;}});
-      h+='<div class="day'+(past?' past':'')+'"><div class="dh"><span class="dn">'+dt.getDate()+'</span><span class="free">'+(past?'지난 날짜':'신청 잔여 '+free+'/6')+'</span></div>';
+      h+='<div class="day'+(past?' past':'')+'"><div class="dh"><span class="dn">'+dt.getDate()+'</span><span class="free">'+(past?'지난 날짜':(isVendor()?'':'신청 잔여 '+free+'/6'))+'</span></div>';
       ['L','D'].forEach(m=>{h+='<div class="meal"><span class="ml">'+(m==='L'?'점심':'저녁')+'</span>';for(let n=1;n<=5;n++)h+=bar(ds,m,n,past);h+='</div>';});
       h+='</div>';
     });
@@ -331,6 +354,7 @@ function blankForm(key){
 }
 function selectSlot(key){
   S.sel=key;S.err='';S.confirmCancel=false;S.editing=false;
+  if(isVendor()&&!S.apps[key]){S.sel=null;S.mode=null;renderCal();renderPanel();return;}
   if(S.apps[key])S.mode='detail';
   else if(S.locks.has(key))S.mode='other';
   else{S.mode='form';S.form=blankForm(key);}
@@ -348,7 +372,7 @@ function priceHtml(){
 function opt(list,v){return list.map(x=>'<option'+(x===v?' selected':'')+'>'+esc(x)+'</option>').join('');}
 function renderPanel(){
   const el=$('panel');if(!el)return;
-  if(!S.sel){el.innerHTML='<div class="center"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><strong>슬롯을 선택하세요</strong><span>'+(APP==='admin'?'슬롯을 누르면 상세 내용과 상태 변경이 열립니다. 빈 슬롯은 회사를 지정해 직접 등록할 수 있습니다.':'달력에서 점선으로 표시된 빈자리를 누르면 신청서가 열립니다. 내 신청 일정을 누르면 진행 상태를 볼 수 있습니다.')+'</span></div>';return;}
+  if(!S.sel){el.innerHTML='<div class="center"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><strong>슬롯을 선택하세요</strong><span>'+(APP==='admin'?'슬롯을 누르면 상세 내용과 상태 변경이 열립니다. 빈 슬롯은 회사를 지정해 직접 등록할 수 있습니다.':isVendor()?'배정된 세미나를 누르면 상세 정보가 열립니다. 흐리게 표시된 일정은 배정되지 않은 일정으로 내용을 볼 수 없습니다.':'달력에서 점선으로 표시된 빈자리를 누르면 신청서가 열립니다. 내 신청 일정을 누르면 진행 상태를 볼 수 있습니다.')+'</span></div>';return;}
   let h='<div class="ph"><div class="eb">'+(S.mode==='form'?(S.editing?'신청 내용 수정':(isAdmin()?'일정 직접 등록':'새 신청')):'선택한 슬롯')+'</div><div class="tt">'+esc(slotLabel(S.sel))+'</div></div>';
   if(S.mode==='form')h+=formHtml();
   else if(S.mode==='detail')h+=detailHtml();
@@ -392,6 +416,7 @@ function formHtml(){
   return h+'</form>';
 }
 function detailHtml(){
+  if(isVendor())return vendorDetailHtml();
   const a=S.apps[S.sel];const st=ST[a.status];
   const p=a.acad==='비학술'?'산정 제외':(a.priceList!=null?won(a.priceList):'별도 협의');
   const cur=STATUS_ORDER.indexOf(a.status);
@@ -400,6 +425,7 @@ function detailHtml(){
   if(a.adjustNote)h+='<div class="note adj">'+esc(a.adjustNote)+'</div>';
   const sp=(a.speakers||[]).filter(x=>x.spk||x.aff).map(x=>x.spk+' / '+x.aff).join('\n')||'-';
   const rows=[['학술 구분',a.acad],['회사',a.company],['신청자',a.applicant||'-'],['카테고리',a.cat],['리드 품목',a.leadItem||'-'],['품목',a.item||'-'],['행사명',a.title],['연제',a.topic||'-'],['연자 · 소속',sp],['모집 인원',a.recruit?fmtN(a.recruit)+'명':'-'],['심화설문',a.surveyOn?'신청 · '+a.survey:'미신청'],['담당PM',a.pm||'-']];
+  if(isAdmin())rows.push(['배정 외주사',vendorName(a.vendorId)||'미배정']);
   h+='<dl class="kv">'+rows.map(r=>'<div><dt>'+r[0]+'</dt><dd>'+esc(r[1])+'</dd></div>').join('')+'</dl>';
   h+='<div class="note info" style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><span>예상 금액</span><b style="font-size:18px;font-variant-numeric:tabular-nums">'+p+'</b></div>';
   const mineOwn=!isAdmin()&&!a.adminRegistered&&(a.status==='req'||a.status==='adj');
@@ -454,7 +480,19 @@ async function doCancel(){
   if(r.error){toast(errMsg(r.error,'취소하지 못했습니다. 다시 시도하세요.'));return;}
   delete S.apps[key];S.locks.delete(key);S.sel=null;S.mode=null;S.confirmCancel=false;renderCal();renderPanel();renderSummary();toast(isAdmin()?'삭제했습니다.':'신청을 취소했습니다.');
 }
+function vendorDetailHtml(){
+  const a=S.apps[S.sel];const st=ST[a.status];
+  let h='<div class="pb"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="stbadge p-'+a.status+'">'+st.label+'</span><span style="color:var(--ink-2);font-size:13px">'+esc(a.acad)+' · '+esc(a.type)+' · '+esc(a.mode)+'</span></div>';
+  if(a.adjustNote)h+='<div class="note adj">'+esc(a.adjustNote)+'</div>';
+  const sp=(a.speakers||[]).filter(x=>x.spk||x.aff).map(x=>x.spk+' / '+x.aff).join('\n')||'-';
+  const rows=[['회사',a.company],['행사명',a.title],['연제',a.topic||'-'],['연자 · 소속',sp],['카테고리',a.cat],['리드 품목',a.leadItem||'-'],['품목',a.item||'-'],['모집 인원',a.recruit?fmtN(a.recruit)+'명':'-'],['심화설문',a.surveyOn?'신청 · '+a.survey:'미신청'],['신청 PM',a.pm||'-'],
+    ['시간',a.adm.time||'-'],['CID',a.adm.cid||'-'],['채널',a.adm.channel||'-'],['담당자',a.adm.manager||'-'],['PM(내부)',a.adm.pmInternal||'-'],['설문 배포',a.adm.surveyDist||'-'],['다시보기',a.adm.replay||'-']];
+  h+='<dl class="kv">'+rows.map(r=>'<div><dt>'+r[0]+'</dt><dd>'+esc(r[1])+'</dd></div>').join('')+'</dl>';
+  h+='<div class="note info">외주사 계정은 조회만 가능합니다. 변경이 필요하면 닥터빌 운영팀에 요청하세요.</div>';
+  return h+'</div>';
+}
 function renderMine(){
+  if(isVendor())return renderVendorList();
   const rows=Object.entries(S.apps).sort((x,y)=>sortKey(x[0])<sortKey(y[0])?-1:1);
   let h='<div class="toolbar"><div><h1>내 신청 현황</h1><p class="sub">'+esc(S.me.company)+' 소속으로 신청된 일정입니다.</p></div></div>';
   if(!rows.length)h+='<div class="listbox"><div class="empty">아직 신청한 일정이 없습니다. ‘일정 신청’ 탭에서 빈자리를 선택해 신청하세요.</div></div>';
@@ -468,13 +506,27 @@ function renderMine(){
   $('main').innerHTML=h;
 }
 
+function renderVendorList(){
+  const rows=Object.entries(S.apps).sort((x,y)=>sortKey(x[0])<sortKey(y[0])?-1:1);
+  let h='<div class="toolbar"><div><h1>배정 목록</h1><p class="sub">'+esc(S.me.company)+'에 배정된 세미나입니다.</p></div></div>';
+  if(!rows.length)h+='<div class="listbox"><div class="empty">아직 배정된 세미나가 없습니다. 배정되면 알림으로 안내드립니다.</div></div>';
+  else{
+    h+='<div class="listbox"><table class="list"><thead><tr><th>일정</th><th>시간</th><th>회사</th><th>유형</th><th>송출형태</th><th>행사명</th><th>연자</th><th>CID</th><th>채널</th><th>상태</th><th></th></tr></thead><tbody>';
+    rows.forEach(([k,a])=>{
+      h+='<tr><td style="white-space:nowrap">'+esc(slotLabel(k))+'</td><td>'+esc(a.adm.time||'-')+'</td><td>'+esc(a.company)+'</td><td style="white-space:nowrap">'+esc(a.type)+'</td><td>'+esc(a.mode)+'</td><td>'+esc(a.title)+'</td><td>'+esc(speakersText(a,', ')||'-')+'</td><td>'+esc(a.adm.cid||'-')+'</td><td>'+esc(a.adm.channel||'-')+'</td><td><span class="stbadge p-'+a.status+'" style="font-size:12px">'+ST[a.status].label+'</span></td><td><button type="button" class="btn sm" data-goto="'+k+'">보기</button></td></tr>';
+    });
+    h+='</tbody></table></div>';
+  }
+  $('main').innerHTML=h;
+}
+
 /* ---------- admin ledger ---------- */
 const MONEY=new Set(['기본 금액','심화설문 지급','심화설문 청구','최종 금액']);
 const NUMS=new Set(['모집 인원','신청자 수','참석자 수','설문 참여자 수']);
 const WRAP=new Set(['행사명','연제','강사명(소속)']);
 const COLS=[
  ['no.',(a,k,i)=>i+1],['상태',a=>ST[a.status].label],['일시',a=>a.date],['시간',a=>a.adm.time||((a.meal==='L'?'점심':'저녁')+' '+a.slot+'번')],
- ['CID',a=>a.adm.cid],['설문 배포',a=>a.adm.surveyDist],['유형',a=>a.type],['송출형태',a=>a.mode],['업체',a=>a.adm.vendor],['채널',a=>a.adm.channel],['담당자',a=>a.adm.manager],
+ ['CID',a=>a.adm.cid],['설문 배포',a=>a.adm.surveyDist],['유형',a=>a.type],['송출형태',a=>a.mode],['업체',a=>vendorName(a.vendorId)||a.adm.vendor],['채널',a=>a.adm.channel],['담당자',a=>a.adm.manager],
  ['구분',a=>a.acad],['회사',a=>a.company],['카테고리',a=>a.cat],['리드 품목',a=>a.leadItem],['품목',a=>a.item],['PM(내부)',a=>a.adm.pmInternal],
  ['행사명',a=>a.title],['연제',a=>a.topic],['강사명(소속)',a=>speakersText(a,'; ')],['PM',a=>a.pm],['설문 유형',a=>a.surveyOn?a.survey:'미신청'],
  ['모집 인원',a=>nOrBlank(a.recruit)],['신청자 수',a=>nOrBlank(a.adm.applicants)],['참석자 수',a=>nOrBlank(a.adm.attendees)],['설문 참여자 수',a=>nOrBlank(a.adm.surveyParticipants)],
@@ -540,11 +592,12 @@ function openRecord(key){
   h+='<div class="sec"><h2>진행 상태</h2><div class="row2"><div class="fld"><label for="rc-st">상태</label><select id="rc-st">'+STATUS_ORDER.map(k=>'<option value="'+k+'"'+(k===a.status?' selected':'')+'>'+ST[k].label+'</option>').join('')+'</select></div>'
    +'<div class="fld"><label for="rc-lead">리드 품목</label><input id="rc-lead" value="'+esc(a.leadItem)+'"></div></div>'
    +'<div class="fld"><label for="rc-note">조정 · 안내 메모 (신청자에게 표시)</label><textarea id="rc-note">'+esc(a.adjustNote||'')+'</textarea></div>'
-   +'<span style="font-size:12px;color:var(--ink-3)">상태가 바뀌면 신청자에게 자동으로 알림이 갑니다.</span></div>';
+   +'<span style="font-size:12px;color:var(--ink-3)">상태가 바뀌면 신청자에게, 외주사를 배정하면 해당 외주사 계정에 자동으로 알림이 갑니다.</span></div>';
   ADMF.forEach(([sec,fs])=>{
     h+='<div class="sec"><h2>'+sec+'</h2><div class="row2">';
     fs.forEach(([id,l,ph])=>{
       let p=ph;if(id==='basePrice')p='비우면 자동: '+(autoBase||'없음');if(id==='finalPrice')p='비우면 기본 금액 + 심화설문 청구';
+      if(id==='vendor'){h+='<div class="fld"><label for="rc-vendor">업체 (배정 외주사)</label><select id="rc-vendor"><option value="">미배정</option>'+S.vendors.map(v=>'<option value="'+v.id+'"'+(v.id===a.vendorId?' selected':'')+'>'+esc(v.name)+'</option>').join('')+'</select></div>';return;}
       h+='<div class="fld"><label for="rc-'+id+'">'+l+'</label><input id="rc-'+id+'"'+(ADMNUM.has(id)?' type="number" inputmode="numeric"':'')+' placeholder="'+esc(p)+'" value="'+esc(a.adm[id])+'"></div>';
     });
     h+='</div></div>';
@@ -557,25 +610,26 @@ function closeRecord(){S.drawer=null;S.memDrawer=null;$('drawerHost').innerHTML=
 async function saveRecord(){
   const key=S.drawer;const a=S.apps[key];if(!a)return;
   const adm={application_id:a.id};
-  ADMF.forEach(([s,fs])=>fs.forEach(([id])=>{const v=$('rc-'+id).value.trim();adm[ADMMAP[id]]=ADMNUM.has(id)?(v===''?null:Number(v)):v;}));
+  const vid=$('rc-vendor').value===''?null:Number($('rc-vendor').value);
+  ADMF.forEach(([s,fs])=>fs.forEach(([id])=>{if(id==='vendor'){adm.vendor=vid?vendorName(vid):'';return;}const v=$('rc-'+id).value.trim();adm[ADMMAP[id]]=ADMNUM.has(id)?(v===''?null:Number(v)):v;}));
   const st=$('rc-st').value,note=$('rc-note').value.trim(),lead=$('rc-lead').value.trim();
   const r1=await sb.from('application_admin').upsert(adm);
   if(r1.error){toast(errMsg(r1.error,'기록을 저장하지 못했습니다.'));return;}
-  if(st!==a.status||note!==a.adjustNote||lead!==a.leadItem){
-    const r2=await sb.from('applications').update({status:st,adjust_note:note,lead_item:lead}).eq('id',a.id);
+  if(st!==a.status||note!==a.adjustNote||lead!==a.leadItem||vid!==a.vendorId){
+    const r2=await sb.from('applications').update({status:st,adjust_note:note,lead_item:lead,vendor_id:vid}).eq('id',a.id);
     if(r2.error){toast(errMsg(r2.error,'상태를 저장하지 못했습니다.'));return;}
   }
   toast('기록을 저장했습니다.');closeRecord();scheduleRefresh();
 }
 
 /* ---------- admin: 회원 관리 ---------- */
-const ROLE_LABEL={member:'회원',admin:'관리자'};
+const ROLE_LABEL={member:'회원',admin:'관리자',vendor:'외주사'};
 const MST_LABEL={active:'활성',suspended:'정지'};
 const fmtDate=(iso)=>{if(!iso)return'-';const d=new Date(iso);return d.getFullYear()+'.'+pad(d.getMonth()+1)+'.'+pad(d.getDate());};
 async function loadMembers(){
   const r=await sb.from('profiles').select('*').order('created_at',{ascending:false}).limit(5000);
   if(r.error){toast('회원 목록을 불러오지 못했습니다.');return;}
-  S.mem.list=r.data;S.mem.loaded=true;
+  S.mem.list=r.data;S.mem.loaded=true;await loadVendors();
   if(!S.customCos.length){const c=await sb.from('companies').select('name').limit(5000);if(!c.error)S.customCos=c.data.map(x=>x.name);}
   if(S.tab==='members'&&!S.memDrawer)renderMembers();
 }
@@ -592,10 +646,10 @@ function appCountOf(uid){let n=0;Object.values(S.apps).forEach(a=>{if(a.userId==
 function renderMembersShell(){
   const m=S.mem;
   let h='<div class="toolbar"><div><h1>회원 관리</h1><p class="sub">가입된 계정의 정보 · 권한 · 이용 상태를 관리합니다. 변경 내역은 계정별로 기록됩니다.</p></div>'
-   +'<button type="button" class="btn" data-act="reloadMem">새로고침</button></div>';
+   +'<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn primary sm" style="height:44px" data-act="newVendorAcc">+ 외주사 계정 생성</button><button type="button" class="btn" data-act="reloadMem">새로고침</button></div></div>';
   h+='<div class="summary" id="memSummary"></div>';
   h+='<div class="filters">'
-   +'<div class="fld"><label for="mm-role">권한</label><select id="mm-role">'+[['all','전체 권한'],['member','회원'],['admin','관리자']].map(([v,l])=>'<option value="'+v+'"'+(m.role===v?' selected':'')+'>'+l+'</option>').join('')+'</select></div>'
+   +'<div class="fld"><label for="mm-role">권한</label><select id="mm-role">'+[['all','전체 권한'],['member','회원'],['vendor','외주사'],['admin','관리자']].map(([v,l])=>'<option value="'+v+'"'+(m.role===v?' selected':'')+'>'+l+'</option>').join('')+'</select></div>'
    +'<div class="fld"><label for="mm-st">상태</label><select id="mm-st">'+[['all','전체 상태'],['active','활성'],['suspended','정지']].map(([v,l])=>'<option value="'+v+'"'+(m.st===v?' selected':'')+'>'+l+'</option>').join('')+'</select></div>'
    +'<div class="fld grow"><label for="mm-q">검색</label><input type="search" id="mm-q" placeholder="아이디 · 이름 · 회사 · 부서 · 이메일" value="'+esc(m.q)+'"></div>'
    +'</div><div id="members"></div>';
@@ -606,8 +660,8 @@ function renderMembersShell(){
 function renderMembers(){
   const el=$('members');if(!el)return;
   const all=S.mem.list;const sm=$('memSummary');
-  if(sm){const c={total:all.length,admin:all.filter(p=>p.role==='admin').length,suspended:all.filter(p=>p.status==='suspended').length,custom:all.filter(p=>p.company_source==='custom').length};
-    sm.innerHTML=[['전체 회원',c.total,'p-req','회'],['관리자',c.admin,'p-ok','관'],['정지 계정',c.suspended,'p-adj','정'],['직접입력 회사',c.custom,'p-rev','직']].map(([l,n,cls,ch])=>'<div class="sum"><span class="dot '+cls+'">'+ch+'</span><div><div class="l">'+l+'</div><div class="n">'+n+'<span style="font-size:12px;font-weight:400;color:var(--ink-3)"> 명</span></div></div></div>').join('');}
+  if(sm){const c={total:all.length,admin:all.filter(p=>p.role==='admin').length,suspended:all.filter(p=>p.status==='suspended').length,custom:all.filter(p=>p.role==='vendor').length};
+    sm.innerHTML=[['전체 회원',c.total,'p-req','회'],['관리자',c.admin,'p-ok','관'],['정지 계정',c.suspended,'p-adj','정'],['외주사 계정',c.custom,'p-rev','외']].map(([l,n,cls,ch])=>'<div class="sum"><span class="dot '+cls+'">'+ch+'</span><div><div class="l">'+l+'</div><div class="n">'+n+'<span style="font-size:12px;font-weight:400;color:var(--ink-3)"> 명</span></div></div></div>').join('');}
   const rows=memberRows();
   if(!rows.length){el.innerHTML='<div class="listbox"><div class="empty">조건에 맞는 회원이 없습니다.</div></div>';return;}
   let h='<div class="ledgerhead"><span><b>'+rows.length+'</b>명</span></div><div class="listbox"><table class="list"><thead><tr><th></th><th>아이디</th><th>이름</th><th>회사</th><th>부서</th><th>이메일</th><th>권한</th><th>상태</th><th>신청</th><th>가입일</th></tr></thead><tbody>';
@@ -615,11 +669,16 @@ function renderMembers(){
     const me=p.id===S.me.id;
     h+='<tr><td><button type="button" class="btn sm" data-mem="'+p.id+'">관리</button></td><td style="white-space:nowrap"><b>'+esc(p.login_id)+'</b>'+(me?' <span class="tag adm">나</span>':'')+'</td><td>'+esc(p.name)+'</td>'
      +'<td>'+esc(p.company)+(p.company_source==='custom'?' <span class="tag sympo">직접입력</span>':'')+'</td><td>'+esc(p.dept||'-')+'</td><td>'+esc(p.email||'-')+'</td>'
-     +'<td><span class="stbadge '+(p.role==='admin'?'p-ok':'p-oth')+'" style="font-size:12px">'+ROLE_LABEL[p.role]+'</span></td>'
+     +'<td><span class="stbadge '+(p.role==='admin'?'p-ok':p.role==='vendor'?'p-rev':'p-oth')+'" style="font-size:12px">'+ROLE_LABEL[p.role]+'</span></td>'
      +'<td><span class="stbadge '+(p.status==='suspended'?'p-adj':'p-req')+'" style="font-size:12px">'+MST_LABEL[p.status||'active']+'</span></td>'
      +'<td class="num">'+appCountOf(p.id)+'</td><td class="num">'+fmtDate(p.created_at)+'</td></tr>';
   });
-  el.innerHTML=h+'</tbody></table></div>';
+  h+='</tbody></table></div>';
+  if(S.vendors.length){
+    h+='<h2 style="font-size:16px;margin:24px 0 10px">외주사 목록</h2><div class="listbox"><table class="list" style="min-width:520px"><thead><tr><th>외주사</th><th>계정</th><th>배정 세미나</th><th>등록일</th></tr></thead><tbody>'
+     +S.vendors.map(v=>'<tr><td><b>'+esc(v.name)+'</b></td><td class="num">'+S.mem.list.filter(p=>p.vendor_id===v.id).length+'</td><td class="num">'+Object.values(S.apps).filter(a=>a.vendorId===v.id).length+'</td><td class="num">'+fmtDate(v.created_at)+'</td></tr>').join('')+'</tbody></table></div>';
+  }
+  el.innerHTML=h;
 }
 async function openMember(id){
   const p=S.mem.list.find(x=>x.id===id);if(!p)return;S.memDrawer=id;
@@ -629,9 +688,10 @@ async function openMember(id){
    +'<div class="dh2"><div><div style="font-size:12px;color:var(--accent);font-weight:500">회원 계정</div><div id="md-t" style="font-size:17px;font-weight:700">'+esc(p.login_id)+' · '+esc(p.name)+'</div><div style="font-size:13px;color:var(--ink-2)">가입 '+fmtDate(p.created_at)+(p.updated_at?' · 최근 변경 '+fmtDate(p.updated_at):'')+'</div></div><button type="button" class="iconbtn" data-act="closeRec" aria-label="닫기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>';
   h+='<div class="sec"><h2>권한 · 이용 상태</h2>'
    +(me?'<div class="note info">본인 계정의 권한과 상태는 바꿀 수 없습니다. 다른 관리자에게 요청하세요.</div>':'')
-   +'<div class="row2"><div class="fld"><label for="md-role">권한</label><select id="md-role"'+(me?' disabled':'')+'><option value="member"'+(p.role==='member'?' selected':'')+'>회원 — 신청 사이트 이용</option><option value="admin"'+(p.role==='admin'?' selected':'')+'>관리자 — 관리자 사이트 이용</option></select></div>'
+   +'<div class="row2"><div class="fld"><label for="md-role">권한</label><select id="md-role"'+(me?' disabled':'')+'><option value="member"'+(p.role==='member'?' selected':'')+'>회원 — 신청 사이트 이용</option><option value="vendor"'+(p.role==='vendor'?' selected':'')+'>외주사 — 배정 세미나 조회만</option><option value="admin"'+(p.role==='admin'?' selected':'')+'>관리자 — 관리자 사이트 이용</option></select></div>'
    +'<div class="fld"><label for="md-st">상태</label><select id="md-st"'+(me?' disabled':'')+'><option value="active"'+((p.status||'active')==='active'?' selected':'')+'>활성</option><option value="suspended"'+(p.status==='suspended'?' selected':'')+'>정지 — 로그인 및 조회 차단</option></select></div></div>'
-   +'<span style="font-size:12px;color:var(--ink-3)">관리자로 바꾸면 이 계정은 신청 사이트 대신 관리자 사이트에서 로그인하며, 모든 회사의 신청 상세와 정산 기록을 볼 수 있습니다.</span></div>';
+   +'<div class="fld"><label for="md-vendor">소속 외주사 (외주사 권한일 때)</label><select id="md-vendor"'+(me?' disabled':'')+'><option value="">선택</option>'+S.vendors.map(v=>'<option value="'+v.id+'"'+(v.id===p.vendor_id?' selected':'')+'>'+esc(v.name)+'</option>').join('')+'</select></div>'
+   +'<span style="font-size:12px;color:var(--ink-3)">외주사로 바꾸면 세미나 신청이 막히고, 그 외주사에 배정된 세미나만 볼 수 있습니다. 관리자로 바꾸면 이 계정은 신청 사이트 대신 관리자 사이트에서 로그인하며, 모든 회사의 신청 상세와 정산 기록을 볼 수 있습니다.</span></div>';
   h+='<div class="sec"><h2>회원 정보</h2><div class="row2">'
    +'<div class="fld"><label for="md-name">이름</label><input id="md-name" value="'+esc(p.name)+'"></div>'
    +'<div class="fld"><label for="md-co">회사(소속)</label><input id="md-co" list="md-co-list" value="'+esc(p.company)+'"><datalist id="md-co-list">'+PHARMA.concat(S.customCos).map(c=>'<option value="'+esc(c)+'"></option>').join('')+'</datalist></div>'
@@ -654,16 +714,64 @@ async function saveMember(){
   const id=S.memDrawer;const p=S.mem.list.find(x=>x.id===id);if(!p)return;
   const v=(i)=>($(i).value||'').trim();
   const patch={name:v('md-name'),company:v('md-co'),dept:v('md-dept'),email:v('md-mail')};
-  if(id!==S.me.id){patch.role=$('md-role').value;patch.status=$('md-st').value;}
+  if(id!==S.me.id){patch.role=$('md-role').value;patch.status=$('md-st').value;
+    if(patch.role==='vendor'){const vv=$('md-vendor').value;if(!vv){toast('외주사 권한에는 소속 외주사를 선택해야 합니다.');return;}patch.vendor_id=Number(vv);delete patch.company;}}
   if(!patch.name||!patch.company){toast('이름과 회사는 비워 둘 수 없습니다.');return;}
-  const changed=Object.keys(patch).some(k=>(p[k]||'')!==patch[k]);
+  const changed=Object.keys(patch).some(k=>(p[k]==null?'':p[k])!==patch[k]);
   if(!changed){closeRecord();return;}
   const r=await sb.from('profiles').update(patch).eq('id',id).select().single();
   if(r.error){toast(errMsg(r.error,'저장하지 못했습니다. 다시 시도하세요.'));return;}
-  if(patch.company&&!PHARMA.includes(patch.company)&&!S.customCos.includes(patch.company)){await sb.from('companies').insert({name:patch.company,added_by:S.me.id});S.customCos.push(patch.company);}
+  if(patch.role!=='vendor'&&patch.company&&!PHARMA.includes(patch.company)&&!S.customCos.includes(patch.company)){await sb.from('companies').insert({name:patch.company,added_by:S.me.id});S.customCos.push(patch.company);}
   const i=S.mem.list.findIndex(x=>x.id===id);S.mem.list[i]=r.data;
   toast((patch.role&&patch.role!==p.role)?'권한을 '+ROLE_LABEL[patch.role]+'(으)로 바꿨습니다.':'회원 정보를 저장했습니다.');
   closeRecord();
+}
+
+function genPassword(){const c='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';const a=new Uint32Array(12);crypto.getRandomValues(a);return Array.from(a,x=>c[x%c.length]).join('')+'!7';}
+function openVendorCreate(){
+  S.memDrawer='new';
+  let h='<div class="scrim" id="scrim"><div class="drawer" role="dialog" aria-modal="true" aria-labelledby="vc-t">'
+   +'<div class="dh2"><div><div style="font-size:12px;color:var(--accent);font-weight:500">외주사 계정</div><div id="vc-t" style="font-size:17px;font-weight:700">외주사 계정 생성</div><div style="font-size:13px;color:var(--ink-2)">생성된 계정은 세미나를 신청할 수 없고, 배정된 세미나만 조회합니다.</div></div><button type="button" class="iconbtn" data-act="closeRec" aria-label="닫기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>'
+   +'<form id="vcForm" novalidate><div class="sec"><h2>외주사</h2><div class="row2">'
+   +'<div class="fld"><label for="vc-vendor">기존 외주사</label><select id="vc-vendor"><option value="">새 외주사 등록</option>'+S.vendors.map(v=>'<option value="'+v.id+'">'+esc(v.name)+'</option>').join('')+'</select></div>'
+   +'<div class="fld"><label for="vc-vname">새 외주사 이름</label><input id="vc-vname" placeholder="예) OO미디어"></div></div></div>'
+   +'<div class="sec"><h2>로그인 정보</h2><div class="row2">'
+   +'<div class="fld"><label for="vc-id">아이디 <span class="req-mark">*</span></label><input id="vc-id" placeholder="영문 소문자·숫자 4~20자" autocomplete="off"></div>'
+   +'<div class="fld"><label for="vc-pw">임시 비밀번호 <span class="req-mark">*</span></label><input id="vc-pw" autocomplete="off" value="'+esc(genPassword())+'"></div>'
+   +'<div class="fld"><label for="vc-name">담당자 이름 <span class="req-mark">*</span></label><input id="vc-name"></div>'
+   +'<div class="fld"><label for="vc-mail">이메일</label><input id="vc-mail" type="email"></div></div>'
+   +'<span style="font-size:12px;color:var(--ink-3)">임시 비밀번호는 생성 후 한 번만 표시됩니다. 외주사 담당자에게 안전한 경로로 전달하세요.</span>'
+   +'<div class="err" role="alert" id="vc-err" hidden></div></div></form>'
+   +'<div class="sec" id="vc-done" hidden></div>'
+   +'<div class="foot"><button type="button" class="btn primary" style="flex:1" data-act="createVendorAcc" id="vc-btn">계정 생성</button><button type="button" class="btn" data-act="closeRec">닫기</button></div></div></div>';
+  $('drawerHost').innerHTML=h;$('vc-vendor').focus();
+}
+async function createVendorAccount(){
+  const v=(i)=>($(i).value||'').trim();const err=(m)=>{const e=$('vc-err');e.textContent=m;e.hidden=false;$('vc-btn').disabled=false;};
+  const id=v('vc-id').toLowerCase(),pw=$('vc-pw').value,name=v('vc-name'),mail=v('vc-mail');
+  let vid=$('vc-vendor').value?Number($('vc-vendor').value):null;const vname=v('vc-vname');
+  if(!vid&&vname.length<2)return err('기존 외주사를 고르거나 새 외주사 이름을 입력하세요.');
+  if(!/^[a-z0-9]{4,20}$/.test(id))return err('아이디는 영문 소문자와 숫자 4~20자로 입력하세요.');
+  if(pw.length<8)return err('임시 비밀번호는 8자 이상이어야 합니다.');
+  if(!name)return err('담당자 이름을 입력하세요.');
+  $('vc-btn').disabled=true;
+  if(!vid){
+    const ex=S.vendors.find(x=>x.name===vname);
+    if(ex)vid=ex.id;else{const r=await sb.from('vendors').insert({name:vname}).select().single();if(r.error)return err(errMsg(r.error,'외주사를 등록하지 못했습니다.'));vid=r.data.id;S.vendors.push(r.data);}
+  }
+  const inv=await sb.from('vendor_invites').upsert({login_id:id,vendor_id:vid,name,email:mail,created_by:S.me.id,created_at:new Date().toISOString()});
+  if(inv.error)return err(errMsg(inv.error,'계정 초대를 만들지 못했습니다.'));
+  const tmp=window.supabase.createClient(CFG.SUPABASE_URL,CFG.SUPABASE_ANON_KEY,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false,storageKey:'dv-vendor-create'}});
+  const r=await tmp.auth.signUp({email:idEmail(id),password:pw,options:{data:{login_id:id,name,company:vendorName(vid),company_source:'list',contact_email:mail}}});
+  try{await tmp.auth.signOut();}catch(e){}
+  if(r.error){await sb.from('vendor_invites').delete().eq('login_id',id);const m=r.error.message||'';return err(/already|registered|exists/i.test(m)?'이미 사용 중인 아이디입니다.':'계정을 만들지 못했습니다: '+m);}
+  $('vcForm').hidden=true;$('vc-btn').hidden=true;
+  const site=location.origin+location.pathname.replace(/admin\/?(index\.html)?$/,'');
+  const d=$('vc-done');d.hidden=false;
+  d.innerHTML='<h2>계정을 만들었습니다</h2><div class="note info" style="display:flex;flex-direction:column;gap:4px"><span>외주사: <b>'+esc(vendorName(vid))+'</b></span><span>로그인 주소: <b>'+esc(site)+'</b></span><span>아이디: <b>'+esc(id)+'</b></span><span>임시 비밀번호: <b>'+esc(pw)+'</b></span></div>'
+   +'<button type="button" class="btn sm" data-act="copyVendorAcc" style="align-self:flex-start">로그인 정보 복사</button><span style="font-size:12px;color:var(--ink-3)">이 창을 닫으면 비밀번호를 다시 볼 수 없습니다.</span>';
+  S.vcCopy='닥터빌 세미나 외주사 계정\n주소: '+site+'\n아이디: '+id+'\n임시 비밀번호: '+pw;
+  toast('외주사 계정을 만들었습니다.');S.mem.loaded=false;loadMembers();
 }
 
 /* ---------- export ---------- */
@@ -750,6 +858,9 @@ document.addEventListener('click',async(e)=>{
   else if(a==='closeRec')closeRecord();
   else if(a==='saveRec')saveRecord();
   else if(a==='saveMem')saveMember();
+  else if(a==='newVendorAcc')openVendorCreate();
+  else if(a==='createVendorAcc')createVendorAccount();
+  else if(a==='copyVendorAcc'){try{await navigator.clipboard.writeText(S.vcCopy||'');toast('복사했습니다.');}catch(err){toast('복사하지 못했습니다. 직접 선택해 복사하세요.');}}
   else if(a==='reloadMem')loadMembers();
   else if(a==='expXlsx')exportXlsx();
   else if(a==='expPdf')exportPdf();

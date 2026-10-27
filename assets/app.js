@@ -20,7 +20,7 @@ const ADMMAP={time:'time_text',cid:'cid',surveyDist:'survey_dist',vendor:'vendor
 const ADMNUM=new Set(['applicants','attendees','surveyParticipants','basePrice','surveyPay','surveyBill','finalPrice']);
 
 let sb=null;
-const S={me:null,user:null,view:'login',tab:'cal',y:0,m:0,apps:{},locks:new Set(),sel:null,mode:null,form:null,editing:false,confirmCancel:false,notis:[],chan:null,err:'',busy:false,
+const S={mem:{list:[],q:'',role:'all',st:'all',loaded:false},memDrawer:null,me:null,user:null,view:'login',tab:'cal',y:0,m:0,apps:{},locks:new Set(),sel:null,mode:null,form:null,editing:false,confirmCancel:false,notis:[],chan:null,err:'',busy:false,
   customCos:[],su:{coMode:'search',coQ:'',coSel:''},al:{scope:'month',y:0,m:0,from:'',to:'',q:'',st:'all'},drawer:null,pref:null};
 
 const $=(id)=>document.getElementById(id);
@@ -150,7 +150,7 @@ function renderTop(){
   if(S.me){
     const unread=S.notis.filter(n=>!n.read).length;
     const tab=(id,label,extra)=>'<button type="button" data-tab="'+id+'"'+(S.tab===id?' aria-current="page"':'')+'>'+label+(extra||'')+'</button>';
-    h+='<nav class="tabs" aria-label="메뉴">'+(APP==='admin'?tab('cal','일정 관리')+tab('all','전체 신청 현황'):tab('cal','일정 신청')+tab('mine','내 신청 현황'))+tab('noti','알림',unread?'<span class="badge">'+unread+'</span>':'')+'</nav>';
+    h+='<nav class="tabs" aria-label="메뉴">'+(APP==='admin'?tab('cal','일정 관리')+tab('all','전체 신청 현황')+tab('members','회원 관리'):tab('cal','일정 신청')+tab('mine','내 신청 현황'))+tab('noti','알림',unread?'<span class="badge">'+unread+'</span>':'')+'</nav>';
     h+='<div class="who"><span class="co">'+esc(S.me.company)+'</span><span>'+esc(S.me.name)+' 님</span>'+(isAdmin()?'<span class="role">관리자</span>':'')+'<button type="button" class="btn-ghost-bar" data-act="logout">로그아웃</button></div>';
   }
   $('topbar').innerHTML=h;
@@ -227,6 +227,7 @@ async function doLogin(id,pw){
 async function enter(user){
   const p=await loadProfile(user.id);
   if(!p){await sb.auth.signOut();S.err='회원 정보를 찾을 수 없습니다. 관리자에게 문의하세요.';renderLogin();return;}
+  if(p.status==='suspended'){await sb.auth.signOut();S.err='이용이 정지된 계정입니다. 운영팀에 문의하세요.';renderLogin();return;}
   if(APP==='admin'&&p.role!=='admin'){await sb.auth.signOut();S.err='관리자 권한이 없는 계정입니다.';renderLogin();return;}
   if(APP==='member'&&p.role==='admin'){await sb.auth.signOut();S.err='관리자 계정은 관리자 사이트(/admin/)에서 로그인하세요.';renderLogin();return;}
   startSession(p);
@@ -273,6 +274,7 @@ function renderApp(){
     renderLegend();renderSummary();renderCal();renderPanel();
   }else if(S.tab==='mine')renderMine();
   else if(S.tab==='all')renderLedgerShell();
+  else if(S.tab==='members')renderMembersShell();
   else renderNoti();
 }
 function renderLegend(){
@@ -551,7 +553,7 @@ function openRecord(key){
   h+='<div class="foot"><button type="button" class="btn primary" style="flex:1" data-act="saveRec">기록 저장</button><button type="button" class="btn" data-act="closeRec">닫기</button></div></div></div>';
   $('drawerHost').innerHTML=h;$('rc-st').focus();
 }
-function closeRecord(){S.drawer=null;$('drawerHost').innerHTML='';if(S.tab==='all')renderLedger();}
+function closeRecord(){S.drawer=null;S.memDrawer=null;$('drawerHost').innerHTML='';if(S.tab==='all')renderLedger();if(S.tab==='members')renderMembers();}
 async function saveRecord(){
   const key=S.drawer;const a=S.apps[key];if(!a)return;
   const adm={application_id:a.id};
@@ -564,6 +566,104 @@ async function saveRecord(){
     if(r2.error){toast(errMsg(r2.error,'상태를 저장하지 못했습니다.'));return;}
   }
   toast('기록을 저장했습니다.');closeRecord();scheduleRefresh();
+}
+
+/* ---------- admin: 회원 관리 ---------- */
+const ROLE_LABEL={member:'회원',admin:'관리자'};
+const MST_LABEL={active:'활성',suspended:'정지'};
+const fmtDate=(iso)=>{if(!iso)return'-';const d=new Date(iso);return d.getFullYear()+'.'+pad(d.getMonth()+1)+'.'+pad(d.getDate());};
+async function loadMembers(){
+  const r=await sb.from('profiles').select('*').order('created_at',{ascending:false}).limit(5000);
+  if(r.error){toast('회원 목록을 불러오지 못했습니다.');return;}
+  S.mem.list=r.data;S.mem.loaded=true;
+  if(!S.customCos.length){const c=await sb.from('companies').select('name').limit(5000);if(!c.error)S.customCos=c.data.map(x=>x.name);}
+  if(S.tab==='members'&&!S.memDrawer)renderMembers();
+}
+function memberRows(){
+  const m=S.mem;const q=m.q.trim().toLowerCase();
+  return m.list.filter(p=>{
+    if(m.role!=='all'&&p.role!==m.role)return false;
+    if(m.st!=='all'&&(p.status||'active')!==m.st)return false;
+    if(q&&![p.login_id,p.name,p.company,p.email,p.dept].join(' ').toLowerCase().includes(q))return false;
+    return true;
+  });
+}
+function appCountOf(uid){let n=0;Object.values(S.apps).forEach(a=>{if(a.userId===uid)n++;});return n;}
+function renderMembersShell(){
+  const m=S.mem;
+  let h='<div class="toolbar"><div><h1>회원 관리</h1><p class="sub">가입된 계정의 정보 · 권한 · 이용 상태를 관리합니다. 변경 내역은 계정별로 기록됩니다.</p></div>'
+   +'<button type="button" class="btn" data-act="reloadMem">새로고침</button></div>';
+  h+='<div class="summary" id="memSummary"></div>';
+  h+='<div class="filters">'
+   +'<div class="fld"><label for="mm-role">권한</label><select id="mm-role">'+[['all','전체 권한'],['member','회원'],['admin','관리자']].map(([v,l])=>'<option value="'+v+'"'+(m.role===v?' selected':'')+'>'+l+'</option>').join('')+'</select></div>'
+   +'<div class="fld"><label for="mm-st">상태</label><select id="mm-st">'+[['all','전체 상태'],['active','활성'],['suspended','정지']].map(([v,l])=>'<option value="'+v+'"'+(m.st===v?' selected':'')+'>'+l+'</option>').join('')+'</select></div>'
+   +'<div class="fld grow"><label for="mm-q">검색</label><input type="search" id="mm-q" placeholder="아이디 · 이름 · 회사 · 부서 · 이메일" value="'+esc(m.q)+'"></div>'
+   +'</div><div id="members"></div>';
+  $('main').innerHTML=h;
+  if(!m.loaded){$('members').innerHTML='<div class="listbox"><div class="empty">회원 목록을 불러오는 중…</div></div>';loadMembers();}
+  else renderMembers();
+}
+function renderMembers(){
+  const el=$('members');if(!el)return;
+  const all=S.mem.list;const sm=$('memSummary');
+  if(sm){const c={total:all.length,admin:all.filter(p=>p.role==='admin').length,suspended:all.filter(p=>p.status==='suspended').length,custom:all.filter(p=>p.company_source==='custom').length};
+    sm.innerHTML=[['전체 회원',c.total,'p-req','회'],['관리자',c.admin,'p-ok','관'],['정지 계정',c.suspended,'p-adj','정'],['직접입력 회사',c.custom,'p-rev','직']].map(([l,n,cls,ch])=>'<div class="sum"><span class="dot '+cls+'">'+ch+'</span><div><div class="l">'+l+'</div><div class="n">'+n+'<span style="font-size:12px;font-weight:400;color:var(--ink-3)"> 명</span></div></div></div>').join('');}
+  const rows=memberRows();
+  if(!rows.length){el.innerHTML='<div class="listbox"><div class="empty">조건에 맞는 회원이 없습니다.</div></div>';return;}
+  let h='<div class="ledgerhead"><span><b>'+rows.length+'</b>명</span></div><div class="listbox"><table class="list"><thead><tr><th></th><th>아이디</th><th>이름</th><th>회사</th><th>부서</th><th>이메일</th><th>권한</th><th>상태</th><th>신청</th><th>가입일</th></tr></thead><tbody>';
+  rows.forEach(p=>{
+    const me=p.id===S.me.id;
+    h+='<tr><td><button type="button" class="btn sm" data-mem="'+p.id+'">관리</button></td><td style="white-space:nowrap"><b>'+esc(p.login_id)+'</b>'+(me?' <span class="tag adm">나</span>':'')+'</td><td>'+esc(p.name)+'</td>'
+     +'<td>'+esc(p.company)+(p.company_source==='custom'?' <span class="tag sympo">직접입력</span>':'')+'</td><td>'+esc(p.dept||'-')+'</td><td>'+esc(p.email||'-')+'</td>'
+     +'<td><span class="stbadge '+(p.role==='admin'?'p-ok':'p-oth')+'" style="font-size:12px">'+ROLE_LABEL[p.role]+'</span></td>'
+     +'<td><span class="stbadge '+(p.status==='suspended'?'p-adj':'p-req')+'" style="font-size:12px">'+MST_LABEL[p.status||'active']+'</span></td>'
+     +'<td class="num">'+appCountOf(p.id)+'</td><td class="num">'+fmtDate(p.created_at)+'</td></tr>';
+  });
+  el.innerHTML=h+'</tbody></table></div>';
+}
+async function openMember(id){
+  const p=S.mem.list.find(x=>x.id===id);if(!p)return;S.memDrawer=id;
+  const me=id===S.me.id;
+  const apps=Object.entries(S.apps).filter(([k,a])=>a.userId===id).sort((x,y)=>sortKey(x[0])<sortKey(y[0])?1:-1).slice(0,10);
+  let h='<div class="scrim" id="scrim"><div class="drawer" role="dialog" aria-modal="true" aria-labelledby="md-t">'
+   +'<div class="dh2"><div><div style="font-size:12px;color:var(--accent);font-weight:500">회원 계정</div><div id="md-t" style="font-size:17px;font-weight:700">'+esc(p.login_id)+' · '+esc(p.name)+'</div><div style="font-size:13px;color:var(--ink-2)">가입 '+fmtDate(p.created_at)+(p.updated_at?' · 최근 변경 '+fmtDate(p.updated_at):'')+'</div></div><button type="button" class="iconbtn" data-act="closeRec" aria-label="닫기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>';
+  h+='<div class="sec"><h2>권한 · 이용 상태</h2>'
+   +(me?'<div class="note info">본인 계정의 권한과 상태는 바꿀 수 없습니다. 다른 관리자에게 요청하세요.</div>':'')
+   +'<div class="row2"><div class="fld"><label for="md-role">권한</label><select id="md-role"'+(me?' disabled':'')+'><option value="member"'+(p.role==='member'?' selected':'')+'>회원 — 신청 사이트 이용</option><option value="admin"'+(p.role==='admin'?' selected':'')+'>관리자 — 관리자 사이트 이용</option></select></div>'
+   +'<div class="fld"><label for="md-st">상태</label><select id="md-st"'+(me?' disabled':'')+'><option value="active"'+((p.status||'active')==='active'?' selected':'')+'>활성</option><option value="suspended"'+(p.status==='suspended'?' selected':'')+'>정지 — 로그인 및 조회 차단</option></select></div></div>'
+   +'<span style="font-size:12px;color:var(--ink-3)">관리자로 바꾸면 이 계정은 신청 사이트 대신 관리자 사이트에서 로그인하며, 모든 회사의 신청 상세와 정산 기록을 볼 수 있습니다.</span></div>';
+  h+='<div class="sec"><h2>회원 정보</h2><div class="row2">'
+   +'<div class="fld"><label for="md-name">이름</label><input id="md-name" value="'+esc(p.name)+'"></div>'
+   +'<div class="fld"><label for="md-co">회사(소속)</label><input id="md-co" list="md-co-list" value="'+esc(p.company)+'"><datalist id="md-co-list">'+PHARMA.concat(S.customCos).map(c=>'<option value="'+esc(c)+'"></option>').join('')+'</datalist></div>'
+   +'<div class="fld"><label for="md-dept">부서</label><input id="md-dept" value="'+esc(p.dept||'')+'"></div>'
+   +'<div class="fld"><label for="md-mail">이메일</label><input id="md-mail" type="email" value="'+esc(p.email||'')+'"></div>'
+   +'</div><span style="font-size:12px;color:var(--ink-3)">회사를 바꾸면 이 계정이 볼 수 있는 일정 범위도 바뀝니다. 이미 신청한 일정의 회사는 그대로 유지됩니다.</span></div>';
+  h+='<div class="sec"><h2>최근 신청 ('+appCountOf(id)+'건)</h2>'+(apps.length?'<dl class="kv">'+apps.map(([k,a])=>'<div><dt>'+esc(ST[a.status].label)+'</dt><dd>'+esc(slotLabel(k))+' · '+esc(a.title)+'</dd></div>').join('')+'</dl>':'<span style="color:var(--ink-3);font-size:13px">신청 내역이 없습니다.</span>')+'</div>';
+  h+='<div class="sec"><h2>변경 이력</h2><div id="md-logs" style="font-size:13px;color:var(--ink-3)">불러오는 중…</div></div>';
+  h+='<div class="sec"><h2>비밀번호</h2><span style="font-size:13px;color:var(--ink-2)">비밀번호 초기화는 보안상 이 화면에서 하지 않습니다. Supabase 대시보드 → Authentication → Users 에서 해당 계정('+esc(p.login_id)+'@…)을 찾아 처리하세요.</span></div>';
+  h+='<div class="foot"><button type="button" class="btn primary" style="flex:1" data-act="saveMem">변경 저장</button><button type="button" class="btn" data-act="closeRec">닫기</button></div></div></div>';
+  $('drawerHost').innerHTML=h;
+  const r=await sb.from('account_logs').select('*').eq('target_id',id).order('created_at',{ascending:false}).limit(30);
+  const el=$('md-logs');if(!el)return;
+  if(r.error||!r.data.length){el.textContent=r.error?'이력을 불러오지 못했습니다.':'변경 이력이 없습니다.';return;}
+  const who=(uid)=>{const x=S.mem.list.find(m=>m.id===uid);return x?x.login_id:'시스템';};
+  const AL={role:'권한',status:'상태',company:'회사',profile:'정보'};
+  el.innerHTML='<dl class="kv">'+r.data.map(l=>{const d=new Date(l.created_at);return '<div><dt>'+(d.getMonth()+1)+'.'+d.getDate()+' '+pad(d.getHours())+':'+pad(d.getMinutes())+'</dt><dd>'+esc((AL[l.action]||l.action)+' · '+l.detail+' (처리: '+who(l.actor_id)+')')+'</dd></div>';}).join('')+'</dl>';
+}
+async function saveMember(){
+  const id=S.memDrawer;const p=S.mem.list.find(x=>x.id===id);if(!p)return;
+  const v=(i)=>($(i).value||'').trim();
+  const patch={name:v('md-name'),company:v('md-co'),dept:v('md-dept'),email:v('md-mail')};
+  if(id!==S.me.id){patch.role=$('md-role').value;patch.status=$('md-st').value;}
+  if(!patch.name||!patch.company){toast('이름과 회사는 비워 둘 수 없습니다.');return;}
+  const changed=Object.keys(patch).some(k=>(p[k]||'')!==patch[k]);
+  if(!changed){closeRecord();return;}
+  const r=await sb.from('profiles').update(patch).eq('id',id).select().single();
+  if(r.error){toast(errMsg(r.error,'저장하지 못했습니다. 다시 시도하세요.'));return;}
+  if(patch.company&&!PHARMA.includes(patch.company)&&!S.customCos.includes(patch.company)){await sb.from('companies').insert({name:patch.company,added_by:S.me.id});S.customCos.push(patch.company);}
+  const i=S.mem.list.findIndex(x=>x.id===id);S.mem.list[i]=r.data;
+  toast((patch.role&&patch.role!==p.role)?'권한을 '+ROLE_LABEL[patch.role]+'(으)로 바꿨습니다.':'회원 정보를 저장했습니다.');
+  closeRecord();
 }
 
 /* ---------- export ---------- */
@@ -623,6 +723,7 @@ document.addEventListener('click',async(e)=>{
   if(t.dataset.key){selectSlot(t.dataset.key);return;}
   if(t.dataset.goto){gotoSlot(t.dataset.goto);return;}
   if(t.dataset.rec){openRecord(t.dataset.rec);return;}
+  if(t.dataset.mem){openMember(t.dataset.mem);return;}
   if(t.dataset.co){S.su.coSel=t.dataset.co;S.su.coMode='search';renderCoPicker();return;}
   if(t.dataset.scope){S.al.scope=t.dataset.scope;renderLedgerShell();return;}
   if(t.dataset.pick){const [f,v]=t.dataset.pick.split(':');S.form[f]=v;renderPanel();return;}
@@ -648,18 +749,21 @@ document.addEventListener('click',async(e)=>{
   else if(a==='admSave')adminSave();
   else if(a==='closeRec')closeRecord();
   else if(a==='saveRec')saveRecord();
+  else if(a==='saveMem')saveMember();
+  else if(a==='reloadMem')loadMembers();
   else if(a==='expXlsx')exportXlsx();
   else if(a==='expPdf')exportPdf();
   else if(a==='askDesk'){try{const p=await Notification.requestPermission();if(p==='granted'){S.pref.desktop=true;savePref();toast('윈도우 알림을 켰습니다.');}}catch(err){}renderNoti();}
   else if(a==='testNoti'){unlockAudio();alertNew({kind:isAdmin()?'new':'status',text:isAdmin()?'[미리보기] 회사명 · 11월 3일 점심 · 1번 슬롯 · 예시 행사명':'[미리보기] 신청 → 확정 · 11월 3일 점심 · 1번 슬롯 · 예시 행사명',key:''});}
   else if(a==='readAll'){await sb.from('notifications').update({read:true}).eq('user_id',S.me.id).eq('read',false);loadNotis();}
 });
-document.addEventListener('keydown',(e)=>{if(e.key==='Escape'&&S.drawer)closeRecord();});
+document.addEventListener('keydown',(e)=>{if(e.key==='Escape'&&(S.drawer||S.memDrawer))closeRecord();});
 document.addEventListener('input',(e)=>{
   const t=e.target;
   if(t.id==='su-co-q'){S.su.coQ=t.value;renderCoResults();return;}
   if(t.id==='su-co-custom'){S.su.coQ=t.value;return;}
   if(t.id==='al-q'){S.al.q=t.value;renderLedger();return;}
+  if(t.id==='mm-q'){S.mem.q=t.value;renderMembers();return;}
   if(!S.form)return;
   if(t.dataset.f){S.form[t.dataset.f]=t.value;if(['type','mode','recruit'].includes(t.dataset.f)&&$('price'))$('price').innerHTML=priceHtml();}
   else if(t.dataset.sp){S.form.speakers[Number(t.dataset.sp)][t.dataset.spf]=t.value;}
@@ -670,6 +774,8 @@ document.addEventListener('change',(e)=>{
   if(t.id==='np-sound'){S.pref.sound=t.checked;savePref();if(t.checked)chime();return;}
   if(t.id==='np-desk'){S.pref.desktop=t.checked;savePref();return;}
   if(t.id==='al-st'){S.al.st=t.value;renderLedger();return;}
+  if(t.id==='mm-role'){S.mem.role=t.value;renderMembers();return;}
+  if(t.id==='mm-st'){S.mem.st=t.value;renderMembers();return;}
   if(t.id==='al-from'){S.al.from=t.value;renderLedger();return;}
   if(t.id==='al-to'){S.al.to=t.value;renderLedger();return;}
   if(t.id==='f-survey'){S.form.surveyOn=t.checked;if(!t.checked)S.form.survey='';renderPanel();}

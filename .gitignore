@@ -1,0 +1,4 @@
+private/
+*.seed.local.sql
+price_tiers_seed.sql
+.DS_Store

@@ -11,7 +11,13 @@ const TYPES=['줌 라이브세미나','현장 라이브세미나','웹심포지�
 const MODES=['생방송','재송출','녹화','녹화송출'];
 const SURVEYS=['인식형','리뷰형','분석형','적용형'];
 const DOW=['월','화','수','목','금'];
-const CATS=['순환기','내분비','호흡기','소화기','근골격','신경·정신','기타'];
+const CAT_KINDS=['질환','진료과'];
+const CAT_PRESET={
+  '질환':['고혈압','이상지질혈증','당뇨병','비만','대사증후군','골다공증','갑상선질환','심부전','심방세동','관상동맥질환','말초동맥질환','뇌졸중','치매','파킨슨병','뇌전증','편두통','우울증','불안장애','불면증','조현병','ADHD','천식','만성폐쇄성폐질환(COPD)','알레르기비염','위식도역류질환','기능성소화불량','과민성장증후군','염증성장질환','지방간','만성간질환','B형간염','만성콩팥병','전립선비대증','과민성방광','발기부전','골관절염','류마티스관절염','통풍','근골격계 통증','신경병증성 통증','아토피피부염','건선','여드름','대상포진','인플루엔자','감염질환','백신·예방접종','빈혈','혈전증','폐암','유방암','위암','대장암','간암','갱년기','안구건조증','녹내장','황반변성'],
+  '진료과':['내과','순환기내과','내분비내과','소화기내과','호흡기내과','신장내과','감염내과','류마티스내과','혈액종양내과','가정의학과','신경과','정신건강의학과','정형외과','신경외과','일반외과','흉부외과','산부인과','소아청소년과','비뇨의학과','피부과','안과','이비인후과','재활의학과','마취통증의학과','영상의학과','진단검사의학과','응급의학과','성형외과','방사선종양학과','핵의학과','직업환경의학과','치과','한의과']
+};
+const MAX_ITEMS=10,MAX_SPK=5;
+const isSympo=f=>f&&f.type==='웹심포지움';
 const KIND={new:'신규 접수',changed:'신청 변경',status:'상태 변경',assign:'세미나 배정'};
 /* 주요 제약사 목록(샘플) — 공식 등록 목록으로 교체하세요 */
 const PHARMA=['GC녹십자','HK이노엔','JW중외제약','SK케미칼','경동제약','경보제약','고려제약','광동제약','구주제약','국제약품','대우제약','대웅바이오','대웅제약','대원제약','대한뉴팜','대한약품','대화제약','동구바이오제약','동국제약','동성제약','동아에스티','동화약품','마더스제약','명인제약','바이넥스','보령','부광약품','비씨월드제약','삼아제약','삼일제약','삼진제약','삼천당제약','서울제약','셀트리온제약','신일제약','신풍제약','아주약품','안국약품','알리코제약','알보젠코리아','영진약품','우리들제약','위더스제약','유나이티드제약','유니메드제약','유한양행','이연제약','일동제약','일양약품','제일약품','조아제약','종근당','종근당바이오','진양제약','코오롱제약','테라젠이텍스','하나제약','한국글로벌제약','한국맥널티','한국유나이티드제약','한국콜마','한국파마','한국프라임제약','한독','한림제약','한미약품','한올바이오파마','한풍제약','현대약품','환인제약','휴온스','휴텍스제약',
@@ -43,7 +49,16 @@ function slotLabel(key){
   const [ds,meal,n]=key.split('_');const d=new Date(ds+'T00:00:00');
   return (d.getMonth()+1)+'월 '+d.getDate()+'일('+'일월화수목금토'[d.getDay()]+') '+(meal==='L'?'점심':'저녁')+' · '+n+'번 슬롯';
 }
-const speakersText=(a,sep)=>(a.speakers||[]).filter(x=>x.spk||x.aff).map(x=>x.spk+(x.aff?' ('+x.aff+')':'')).join(sep);
+const spName=x=>x.spk+(x.aff?' ('+x.aff+')':'');
+function speakersText(a,sep){
+  const all=(a.speakers||[]).filter(x=>x.spk||x.aff);
+  const chair=all.find(x=>x.role==='chair');const sp=all.filter(x=>x.role!=='chair');
+  const out=[];if(chair)out.push('[좌장] '+spName(chair));
+  sp.forEach(x=>out.push((x.chair?'[좌장 겸 연자] ':'')+spName(x)+(x.topic?' – '+x.topic:'')));
+  return out.join(sep);
+}
+function catKind(n){for(const k of CAT_KINDS){if(CAT_PRESET[k].includes(n))return k;}const c=(S.customCats||[]).find(x=>x.name===n);return c?c.kind:'';}
+function catLabel(n){if(!n)return'';const k=catKind(n);return k?'['+k+'] '+n:n;}
 function calcPrice(f){
   if(f.acad==='비학술')return{ok:false,excluded:true,basis:'비학술',msg:'비학술 행사는 예상 금액 산정 대상이 아닙니다.'};
   const col=f.mode==='재송출'?'R':(f.type==='웹심포지움'?'D':'L');
@@ -76,10 +91,31 @@ function fromRow(r){
 }
 function toRow(f,key){
   const [date,meal,n]=key.split('_');const p=calcPrice(f);
-  return{event_date:date,meal,slot:Number(n),acad:f.acad,type:f.type,mode:f.mode,category:f.cat,lead_item:f.leadItem.trim(),item:f.item.trim(),title:f.title.trim(),topic:f.topic.trim(),
-    speakers:f.speakers.map(s=>({spk:s.spk.trim(),aff:s.aff.trim()})).filter(s=>s.spk||s.aff),recruit:f.recruit===''?null:parseInt(f.recruit,10),
+  return{event_date:date,meal,slot:Number(n),acad:f.acad,type:f.type,mode:f.mode,category:f.cat,lead_item:f.leadItem.trim(),item:f.items.map(x=>x.trim()).filter(Boolean).join(', '),title:f.title.trim(),topic:f.topic.trim(),
+    speakers:speakersOut(f),recruit:f.recruit===''?null:parseInt(f.recruit,10),
     survey_on:!!f.surveyOn,survey:f.surveyOn?f.survey:'',pm:f.pm.trim(),price_list:p.ok?p.v:null};
 }
+function speakersOut(f){
+  const sym=isSympo(f);const out=[];
+  if(sym&&f.chair.mode==='sep'&&(f.chair.spk.trim()||f.chair.aff.trim()))out.push({role:'chair',spk:f.chair.spk.trim(),aff:f.chair.aff.trim()});
+  f.speakers.forEach((s,i)=>{
+    const o={spk:s.spk.trim(),aff:s.aff.trim()};if(!o.spk&&!o.aff)return;
+    if(sym){if((s.topic||'').trim())o.topic=s.topic.trim();if(f.chair.mode==='spk'&&f.chair.idx===i)o.chair=true;}
+    out.push(o);
+  });
+  return out;
+}
+function formFromApp(x){
+  const all=(x.speakers||[]).map(s=>Object.assign({},s));
+  const ch=all.find(s=>s.role==='chair');let sp=all.filter(s=>s.role!=='chair').map(s=>({spk:s.spk||'',aff:s.aff||'',topic:s.topic||'',chair:!!s.chair}));
+  const ci=sp.findIndex(s=>s.chair);
+  const chair=ch?{mode:'sep',idx:-1,spk:ch.spk||'',aff:ch.aff||''}:(ci>=0?{mode:'spk',idx:ci,spk:'',aff:''}:{mode:'none',idx:-1,spk:'',aff:''});
+  sp=sp.map(s=>({spk:s.spk,aff:s.aff,topic:s.topic}));
+  const f={acad:x.acad,type:x.type,mode:x.mode,company:x.company,cat:x.cat,leadItem:x.leadItem,items:x.item?x.item.split(/\s*,\s*/).filter(Boolean):[''],title:x.title,topic:x.topic,speakers:sp.length?sp:[{spk:'',aff:'',topic:''}],chair,recruit:x.recruit,surveyOn:x.surveyOn,survey:x.survey,pm:x.pm};
+  if(!f.items.length)f.items=[''];
+  padSympo(f);return f;
+}
+function padSympo(f){if(isSympo(f))while(f.speakers.length<2)f.speakers.push({spk:'',aff:'',topic:''});}
 function errMsg(e,fallback){
   if(!e)return fallback;
   if(e.code==='23505')return'방금 다른 신청이 접수된 슬롯입니다. 다른 빈자리를 선택하세요.';
@@ -350,14 +386,15 @@ function renderCal(){
 }
 function blankForm(key){
   const meal=key.split('_')[1];
-  return{acad:'학술',type:meal==='D'?'웹심포지움':'줌 라이브세미나',mode:'생방송',company:isAdmin()?'':S.me.company,cat:'순환기',leadItem:'',item:'',title:'',topic:'',speakers:[{spk:'',aff:''}],recruit:'',surveyOn:false,survey:'',pm:''};
+  const f={acad:'학술',type:meal==='D'?'웹심포지움':'줌 라이브세미나',mode:'생방송',company:isAdmin()?'':S.me.company,cat:'',leadItem:'',items:[''],title:'',topic:'',speakers:[{spk:'',aff:'',topic:''}],chair:{mode:'none',idx:-1,spk:'',aff:''},recruit:'',surveyOn:false,survey:'',pm:''};
+  padSympo(f);return f;
 }
 function selectSlot(key){
   S.sel=key;S.err='';S.confirmCancel=false;S.editing=false;
   if(isVendor()&&!S.apps[key]){S.sel=null;S.mode=null;renderCal();renderPanel();return;}
   if(S.apps[key])S.mode='detail';
   else if(S.locks.has(key))S.mode='other';
-  else{S.mode='form';S.form=blankForm(key);}
+  else{S.mode='form';S.form=blankForm(key);resetCatUI();}
   renderCal();renderPanel();
 }
 function priceHtml(){
@@ -374,10 +411,50 @@ function renderPanel(){
   const el=$('panel');if(!el)return;
   if(!S.sel){el.innerHTML='<div class="center"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><strong>슬롯을 선택하세요</strong><span>'+(APP==='admin'?'슬롯을 누르면 상세 내용과 상태 변경이 열립니다. 빈 슬롯은 회사를 지정해 직접 등록할 수 있습니다.':isVendor()?'배정된 세미나를 누르면 상세 정보가 열립니다. 흐리게 표시된 일정은 배정되지 않은 일정으로 내용을 볼 수 없습니다.':'달력에서 점선으로 표시된 빈자리를 누르면 신청서가 열립니다. 내 신청 일정을 누르면 진행 상태를 볼 수 있습니다.')+'</span></div>';return;}
   let h='<div class="ph"><div class="eb">'+(S.mode==='form'?(S.editing?'신청 내용 수정':(isAdmin()?'일정 직접 등록':'새 신청')):'선택한 슬롯')+'</div><div class="tt">'+esc(slotLabel(S.sel))+'</div></div>';
-  if(S.mode==='form')h+=formHtml();
+  const isForm=S.mode==='form';
+  if(isForm)h+=formHtml();
   else if(S.mode==='detail')h+=detailHtml();
   else h+='<div class="center"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><strong>세미나 확정</strong><span>다른 소속의 일정입니다. 상세 내용은 공개되지 않습니다.</span></div>';
   el.innerHTML=h;
+  if(isForm){renderCatPicker();if(!S.catsLoaded)loadCats();}
+}
+function chairOptLabel(s,i){return (i+1)+'번 연자 겸임'+(s.spk.trim()?' · '+s.spk.trim():'');}
+function resetCatUI(){S.cat={q:'',kind:'질환',mode:'search'};}
+async function loadCats(){
+  S.catsLoaded=true;
+  const r=await sb.from('categories').select('name,kind').limit(5000);
+  if(!r.error){S.customCats=r.data;if($('catPicker'))renderCatPicker();}
+}
+function catMatches(q,kind){
+  q=q.trim().toLowerCase().replace(/\s+/g,'');
+  const all=CAT_PRESET[kind].map(n=>({n,src:kind})).concat((S.customCats||[]).filter(c=>c.kind===kind&&!CAT_PRESET[kind].includes(c.name)).map(c=>({n:c.name,src:'직접입력 등록'})));
+  if(!q)return all.slice(0,12);
+  return all.filter(o=>o.n.toLowerCase().replace(/\s+/g,'').includes(q)).slice(0,12);
+}
+function renderCatResults(){
+  const el=$('catResults');if(!el)return;const c=S.cat;
+  const r=catMatches(c.q,c.kind);
+  el.innerHTML=(r.length?r.map(o=>'<button type="button" data-cat="'+esc(o.n)+'"><span>'+esc(o.n)+'</span><span class="src">'+esc(o.src)+'</span></button>').join(''):'<div class="none">검색 결과가 없습니다.</div>')
+   +'<button type="button" data-act="catCustom"><span>찾는 '+(c.kind==='질환'?'질환':'진료과')+'이 없나요? <b>직접 입력</b></span><span class="src">'+esc(c.q.trim())+'</span></button>';
+}
+function renderCatPicker(){
+  const el=$('catPicker');if(!el||!S.form)return;if(!S.cat)resetCatUI();const c=S.cat,f=S.form;
+  const ck=f.cat?(catKind(f.cat)||f.catNewKind||''):'';
+  if(f.cat){el.innerHTML='<div class="cochip"><span>'+(ck?'<span class="catkind">'+esc(ck)+'</span> ':'')+'<b>'+esc(f.cat)+'</b></span><button type="button" class="btn sm" data-act="catChange">변경</button></div>';return;}
+  const pills='<div class="pills" role="group" aria-label="카테고리 기준">'+CAT_KINDS.map(k=>'<button type="button" data-catkind="'+k+'" aria-pressed="'+(c.kind===k)+'">'+(k==='질환'?'질환별':'진료과')+'</button>').join('')+'</div>';
+  if(c.mode==='custom'){
+    el.innerHTML=pills+'<input id="cat-custom" aria-label="카테고리 직접 입력" placeholder="'+(c.kind==='질환'?'질환명':'진료과명')+'을 입력하세요" value="'+esc(c.q)+'" class="pickin">'
+     +'<div style="display:flex;gap:8px"><button type="button" class="btn primary sm" data-act="catCustomOk">이 이름으로 사용</button><button type="button" class="btn sm" data-act="catSearch">목록에서 검색</button></div>'
+     +'<span style="font-size:12px;color:var(--ink-3)">직접 입력한 카테고리는 저장 후 다른 신청자의 검색 목록에도 추가됩니다.</span>';
+    return;
+  }
+  el.innerHTML=pills+'<input id="cat-q" type="search" aria-label="카테고리 검색" placeholder="'+(c.kind==='질환'?'질환명 검색 (예: 고혈압, 당뇨)':'진료과 검색 (예: 내과, 정형외과)')+'" value="'+esc(c.q)+'" autocomplete="off" class="pickin"><div class="coresults" id="catResults"></div>';
+  renderCatResults();
+}
+async function saveCustomCat(name,kind){
+  if(!name||catKind(name))return;
+  (S.customCats=S.customCats||[]).push({name,kind});
+  await sb.from('categories').insert({name,kind,added_by:S.me.id});
 }
 function formHtml(){
   const f=S.form;const n=Number(S.sel.split('_')[2]);
@@ -388,21 +465,38 @@ function formHtml(){
   h+='<div class="row2"><div class="fld"><label for="f-type">유형</label><select id="f-type" data-f="type">'+opt(TYPES,f.type)+'</select></div>'
    +'<div class="fld"><label for="f-mode">송출형태</label><select id="f-mode" data-f="mode">'+opt(MODES,f.mode)+'</select></div></div>';
   h+='<div class="row2"><div class="fld"><label for="f-co">회사</label><input id="f-co" data-f="company" value="'+esc(f.company)+'"'+(isAdmin()&&!S.editing?' placeholder="신청 회사명" list="co-list"':' readonly')+'>'+(isAdmin()?'<datalist id="co-list">'+PHARMA.concat(S.customCos).map(c=>'<option value="'+esc(c)+'"></option>').join('')+'</datalist>':'')+'</div>'
-   +'<div class="fld"><label for="f-cat">카테고리</label><select id="f-cat" data-f="cat">'+opt(CATS,f.cat)+'</select></div></div>';
-  h+='<div class="row2"><div class="fld"><label for="f-lead">리드 품목</label><input id="f-lead" data-f="leadItem" placeholder="대표 품목" value="'+esc(f.leadItem)+'"></div>'
-   +'<div class="fld"><label for="f-item">품목</label><input id="f-item" data-f="item" placeholder="제품명 / 성분명" value="'+esc(f.item)+'"></div></div>';
+   +'<div class="fld"><label for="f-lead">리드 품목</label><input id="f-lead" data-f="leadItem" placeholder="대표 품목" value="'+esc(f.leadItem)+'"></div></div>';
+  h+='<div class="box"><span class="lbl">카테고리 <span style="font-weight:400;color:var(--ink-3)">· 질환별 또는 진료과</span></span><div id="catPicker" class="copicker"></div></div>';
+  h+='<div class="box"><span class="lbl">품목</span>';
+  f.items.forEach((it,i)=>{
+    h+='<div class="sprow"><span class="no">'+(i+1)+'</span><div class="fld" style="flex:1 1 0"><label for="it-'+i+'" class="sr">품목 '+(i+1)+'</label><input id="it-'+i+'" data-it="'+i+'" placeholder="제품명 / 성분명" value="'+esc(it)+'"></div>'
+     +(i>0?'<button type="button" class="iconbtn sp" style="width:40px;height:40px" data-act="rmItem" data-i="'+i+'" aria-label="'+(i+1)+'번 품목 삭제"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>':'<span class="sp"></span>')+'</div>';
+  });
+  if(f.items.length<MAX_ITEMS)h+='<button type="button" class="btn dashed" data-act="addItem">+ 품목 추가</button>';
+  h+='</div>';
   h+='<div class="fld"><label for="f-title">행사명 <span class="req-mark">*</span></label><input id="f-title" data-f="title" placeholder="행사명을 입력하세요" value="'+esc(f.title)+'"></div>';
   h+='<div class="fld"><label for="f-topic">연제</label><input id="f-topic" data-f="topic" placeholder="강의 제목" value="'+esc(f.topic)+'"></div>';
-  h+='<div class="box"><span class="lbl">연자 · 소속</span>';
+  const sym=isSympo(f),minSp=sym?2:1;
+  h+='<div class="box"><span class="lbl">'+(sym?'연자 · 소속 · 주제 <span style="font-weight:400;color:var(--ink-3)">· 웹심포지움은 연자 2명 기본</span>':'연자 · 소속')+'</span>';
   f.speakers.forEach((s,i)=>{
-    h+='<div class="sprow"><span class="no">'+(i+1)+'</span>'
-     +'<div class="fld"><label for="sp-'+i+'">연자</label><input id="sp-'+i+'" data-sp="'+i+'" data-spf="spk" placeholder="성명" value="'+esc(s.spk)+'"></div>'
+    h+='<div class="spgrp"><div class="sprow"><span class="no">'+(i+1)+'</span>'
+     +'<div class="fld"><label for="sp-'+i+'">연자'+(sym&&f.chair.mode==='spk'&&f.chair.idx===i?' <span class="chairtag">좌장 겸임</span>':'')+'</label><input id="sp-'+i+'" data-sp="'+i+'" data-spf="spk" placeholder="성명" value="'+esc(s.spk)+'"></div>'
      +'<div class="fld"><label for="sa-'+i+'">소속</label><input id="sa-'+i+'" data-sp="'+i+'" data-spf="aff" placeholder="병원 · 진료과" value="'+esc(s.aff)+'"></div>'
-     +(i>0?'<button type="button" class="iconbtn sp" style="width:40px;height:40px" data-act="rmSpk" data-i="'+i+'" aria-label="'+(i+1)+'번 연자 삭제"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>':'<span class="sp"></span>')
+     +(i>=minSp?'<button type="button" class="iconbtn sp" style="width:40px;height:40px" data-act="rmSpk" data-i="'+i+'" aria-label="'+(i+1)+'번 연자 삭제"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>':'<span class="sp"></span>')
      +'</div>';
+    if(sym)h+='<div class="sprow sptopic"><span class="no"></span><div class="fld" style="flex:1 1 0"><label for="st-'+i+'">'+(i+1)+'번 연자 주제</label><input id="st-'+i+'" data-sp="'+i+'" data-spf="topic" placeholder="발표 주제" value="'+esc(s.topic||'')+'"></div><span class="sp"></span></div>';
+    h+='</div>';
   });
-  if(f.speakers.length<5)h+='<button type="button" class="btn dashed" data-act="addSpk">+ 연자 추가</button>';
+  if(f.speakers.length<MAX_SPK)h+='<button type="button" class="btn dashed" data-act="addSpk">+ 연자 추가</button>';
   h+='</div>';
+  if(sym){
+    h+='<div class="box"><span class="lbl">좌장</span><div class="fld"><label for="f-chair" class="sr">좌장 선택</label><select id="f-chair">'
+     +'<option value="none"'+(f.chair.mode==='none'?' selected':'')+'>좌장 없음</option>'
+     +f.speakers.map((s,i)=>'<option value="s'+i+'"'+(f.chair.mode==='spk'&&f.chair.idx===i?' selected':'')+'>'+esc(chairOptLabel(s,i))+'</option>').join('')
+     +'<option value="sep"'+(f.chair.mode==='sep'?' selected':'')+'>별도 좌장 지정 (연자 외)</option></select></div>';
+    if(f.chair.mode==='sep')h+='<div class="sprow"><span class="no">좌</span><div class="fld"><label for="ch-spk">좌장</label><input id="ch-spk" data-ch="spk" placeholder="성명" value="'+esc(f.chair.spk)+'"></div><div class="fld"><label for="ch-aff">소속</label><input id="ch-aff" data-ch="aff" placeholder="병원 · 진료과" value="'+esc(f.chair.aff)+'"></div><span class="sp"></span></div>';
+    h+='</div>';
+  }
   h+='<div class="row2"><div class="fld"><label for="f-rec">모집 인원 수</label><input id="f-rec" data-f="recruit" type="number" inputmode="numeric" min="0" step="100" placeholder="예) 3000" value="'+esc(f.recruit)+'"></div>'
    +'<div class="fld"><label for="f-pm">담당PM</label><input id="f-pm" data-f="pm" placeholder="이름 / 연락처" value="'+esc(f.pm)+'"></div></div>';
   h+='<div class="box" style="background:var(--surface)"><label class="chk"><input type="checkbox" id="f-survey"'+(f.surveyOn?' checked':'')+'>심화설문 신청</label>';
@@ -423,8 +517,8 @@ function detailHtml(){
   let h='<div class="pb"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="stbadge p-'+a.status+'">'+st.label+'</span><span style="color:var(--ink-2);font-size:13px">'+esc(a.acad)+' · '+esc(a.type)+' · '+esc(a.mode)+'</span>'+(a.adminRegistered?'<span class="tag adm">관리자 등록</span>':'')+'</div>';
   h+='<div class="steps">'+STATUS_ORDER.map((k,i)=>{let on=i<=cur;if(a.status==='ok'&&k==='adj')on=false;return '<div class="s'+(i===cur?' cur':'')+'"><span class="c'+(on?' p-'+k:'')+'"'+(on?' style="border-color:transparent"':'')+'>'+(i+1)+'</span>'+ST[k].label+'</div>';}).join('')+'</div>';
   if(a.adjustNote)h+='<div class="note adj">'+esc(a.adjustNote)+'</div>';
-  const sp=(a.speakers||[]).filter(x=>x.spk||x.aff).map(x=>x.spk+' / '+x.aff).join('\n')||'-';
-  const rows=[['학술 구분',a.acad],['회사',a.company],['신청자',a.applicant||'-'],['카테고리',a.cat],['리드 품목',a.leadItem||'-'],['품목',a.item||'-'],['행사명',a.title],['연제',a.topic||'-'],['연자 · 소속',sp],['모집 인원',a.recruit?fmtN(a.recruit)+'명':'-'],['심화설문',a.surveyOn?'신청 · '+a.survey:'미신청'],['담당PM',a.pm||'-']];
+  const sp=speakersText(a,'\n')||'-';
+  const rows=[['학술 구분',a.acad],['회사',a.company],['신청자',a.applicant||'-'],['카테고리',catLabel(a.cat)||'-'],['리드 품목',a.leadItem||'-'],['품목',a.item||'-'],['행사명',a.title],['연제',a.topic||'-'],[isSympo(a)?'좌장 · 연자 · 주제':'연자 · 소속',sp],['모집 인원',a.recruit?fmtN(a.recruit)+'명':'-'],['심화설문',a.surveyOn?'신청 · '+a.survey:'미신청'],['담당PM',a.pm||'-']];
   if(isAdmin())rows.push(['배정 외주사',vendorName(a.vendorId)||'미배정']);
   h+='<dl class="kv">'+rows.map(r=>'<div><dt>'+r[0]+'</dt><dd>'+esc(r[1])+'</dd></div>').join('')+'</dl>';
   h+='<div class="note info" style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><span>예상 금액</span><b style="font-size:18px;font-variant-numeric:tabular-nums">'+p+'</b></div>';
@@ -463,6 +557,7 @@ async function submitForm(){
   }
   S.busy=false;
   if(r.error){S.err=errMsg(r.error,'저장하지 못했습니다. 잠시 후 다시 시도하세요.');renderPanel();return;}
+  if(f.cat&&f.catNewKind)saveCustomCat(f.cat,f.catNewKind);
   const was=S.editing;S.editing=false;S.mode='detail';
   S.apps[key]=Object.assign(fromRow(r.data),{adm:(S.apps[key]&&S.apps[key].adm)||fromRow(r.data).adm});S.locks.add(key);
   toast(was?'수정 내용을 저장했습니다.':(isAdmin()?'일정을 등록했습니다.':'신청이 접수되었습니다.'));
@@ -484,8 +579,8 @@ function vendorDetailHtml(){
   const a=S.apps[S.sel];const st=ST[a.status];
   let h='<div class="pb"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="stbadge p-'+a.status+'">'+st.label+'</span><span style="color:var(--ink-2);font-size:13px">'+esc(a.acad)+' · '+esc(a.type)+' · '+esc(a.mode)+'</span></div>';
   if(a.adjustNote)h+='<div class="note adj">'+esc(a.adjustNote)+'</div>';
-  const sp=(a.speakers||[]).filter(x=>x.spk||x.aff).map(x=>x.spk+' / '+x.aff).join('\n')||'-';
-  const rows=[['회사',a.company],['행사명',a.title],['연제',a.topic||'-'],['연자 · 소속',sp],['카테고리',a.cat],['리드 품목',a.leadItem||'-'],['품목',a.item||'-'],['모집 인원',a.recruit?fmtN(a.recruit)+'명':'-'],['심화설문',a.surveyOn?'신청 · '+a.survey:'미신청'],['신청 PM',a.pm||'-'],
+  const sp=speakersText(a,'\n')||'-';
+  const rows=[['회사',a.company],['행사명',a.title],['연제',a.topic||'-'],[isSympo(a)?'좌장 · 연자 · 주제':'연자 · 소속',sp],['카테고리',catLabel(a.cat)||'-'],['리드 품목',a.leadItem||'-'],['품목',a.item||'-'],['모집 인원',a.recruit?fmtN(a.recruit)+'명':'-'],['심화설문',a.surveyOn?'신청 · '+a.survey:'미신청'],['신청 PM',a.pm||'-'],
     ['시간',a.adm.time||'-'],['CID',a.adm.cid||'-'],['채널',a.adm.channel||'-'],['담당자',a.adm.manager||'-'],['PM(내부)',a.adm.pmInternal||'-'],['설문 배포',a.adm.surveyDist||'-'],['다시보기',a.adm.replay||'-']];
   h+='<dl class="kv">'+rows.map(r=>'<div><dt>'+r[0]+'</dt><dd>'+esc(r[1])+'</dd></div>').join('')+'</dl>';
   h+='<div class="note info">외주사 계정은 조회만 가능합니다. 변경이 필요하면 닥터빌 운영팀에 요청하세요.</div>';
@@ -527,7 +622,7 @@ const WRAP=new Set(['행사명','연제','강사명(소속)']);
 const COLS=[
  ['no.',(a,k,i)=>i+1],['상태',a=>ST[a.status].label],['일시',a=>a.date],['시간',a=>a.adm.time||((a.meal==='L'?'점심':'저녁')+' '+a.slot+'번')],
  ['CID',a=>a.adm.cid],['설문 배포',a=>a.adm.surveyDist],['유형',a=>a.type],['송출형태',a=>a.mode],['업체',a=>vendorName(a.vendorId)||a.adm.vendor],['채널',a=>a.adm.channel],['담당자',a=>a.adm.manager],
- ['구분',a=>a.acad],['회사',a=>a.company],['카테고리',a=>a.cat],['리드 품목',a=>a.leadItem],['품목',a=>a.item],['PM(내부)',a=>a.adm.pmInternal],
+ ['구분',a=>a.acad],['회사',a=>a.company],['카테고리',a=>catLabel(a.cat)],['리드 품목',a=>a.leadItem],['품목',a=>a.item],['PM(내부)',a=>a.adm.pmInternal],
  ['행사명',a=>a.title],['연제',a=>a.topic],['강사명(소속)',a=>speakersText(a,'; ')],['PM',a=>a.pm],['설문 유형',a=>a.surveyOn?a.survey:'미신청'],
  ['모집 인원',a=>nOrBlank(a.recruit)],['신청자 수',a=>nOrBlank(a.adm.applicants)],['참석자 수',a=>nOrBlank(a.adm.attendees)],['설문 참여자 수',a=>nOrBlank(a.adm.surveyParticipants)],
  ['개인정보동의',a=>a.adm.privacy],['질문',a=>a.adm.questions],['다시보기',a=>a.adm.replay],
@@ -602,7 +697,7 @@ function openRecord(key){
     });
     h+='</div></div>';
   });
-  h+='<div class="sec"><h2>신청 내용</h2><dl class="kv">'+[['카테고리',a.cat],['품목',a.item||'-'],['연제',a.topic||'-'],['강사명(소속)',speakersText(a,'\n')||'-'],['모집 인원',a.recruit?fmtN(a.recruit)+'명':'-'],['설문 유형',a.surveyOn?a.survey:'미신청'],['신청자',a.applicant||'-']].map(r=>'<div><dt>'+r[0]+'</dt><dd>'+esc(r[1])+'</dd></div>').join('')+'</dl></div>';
+  h+='<div class="sec"><h2>신청 내용</h2><dl class="kv">'+[['카테고리',catLabel(a.cat)||'-'],['품목',a.item||'-'],['연제',a.topic||'-'],['강사명(소속)',speakersText(a,'\n')||'-'],['모집 인원',a.recruit?fmtN(a.recruit)+'명':'-'],['설문 유형',a.surveyOn?a.survey:'미신청'],['신청자',a.applicant||'-']].map(r=>'<div><dt>'+r[0]+'</dt><dd>'+esc(r[1])+'</dd></div>').join('')+'</dl></div>';
   h+='<div class="foot"><button type="button" class="btn primary" style="flex:1" data-act="saveRec">기록 저장</button><button type="button" class="btn" data-act="closeRec">닫기</button></div></div></div>';
   $('drawerHost').innerHTML=h;$('rc-st').focus();
 }
@@ -835,6 +930,8 @@ document.addEventListener('click',async(e)=>{
   if(t.dataset.co){S.su.coSel=t.dataset.co;S.su.coMode='search';renderCoPicker();return;}
   if(t.dataset.scope){S.al.scope=t.dataset.scope;renderLedgerShell();return;}
   if(t.dataset.pick){const [f,v]=t.dataset.pick.split(':');S.form[f]=v;renderPanel();return;}
+  if(t.dataset.cat){S.form.cat=t.dataset.cat;S.form.catNewKind='';renderCatPicker();return;}
+  if(t.dataset.catkind){S.cat.kind=t.dataset.catkind;renderCatPicker();const q=$('cat-q')||$('cat-custom');q&&q.focus();return;}
   const a=t.dataset.act;if(!a)return;
   if(a==='goSignup'){S.err='';S.view='signup';renderSignup();}
   else if(a==='goLogin'){S.err='';S.view='login';renderLogin();}
@@ -847,9 +944,15 @@ document.addEventListener('click',async(e)=>{
   else if(a==='nextM'){S.m++;if(S.m>11){S.m=0;S.y++;}renderCal();}
   else if(a==='alPrev'){S.al.m--;if(S.al.m<0){S.al.m=11;S.al.y--;}renderLedgerShell();}
   else if(a==='alNext'){S.al.m++;if(S.al.m>11){S.al.m=0;S.al.y++;}renderLedgerShell();}
-  else if(a==='addSpk'){S.form.speakers.push({spk:'',aff:''});renderPanel();const i=S.form.speakers.length-1;$('sp-'+i)&&$('sp-'+i).focus();}
-  else if(a==='rmSpk'){S.form.speakers.splice(Number(t.dataset.i),1);renderPanel();}
-  else if(a==='edit'){const x=S.apps[S.sel];S.form={acad:x.acad,type:x.type,mode:x.mode,company:x.company,cat:x.cat,leadItem:x.leadItem,item:x.item,title:x.title,topic:x.topic,speakers:(x.speakers.length?x.speakers:[{spk:'',aff:''}]).map(s=>Object.assign({},s)),recruit:x.recruit,surveyOn:x.surveyOn,survey:x.survey,pm:x.pm};S.editing=true;S.mode='form';S.err='';renderPanel();}
+  else if(a==='catCustom'){S.cat.mode='custom';renderCatPicker();$('cat-custom')&&$('cat-custom').focus();}
+  else if(a==='catSearch'){S.cat.mode='search';renderCatPicker();$('cat-q')&&$('cat-q').focus();}
+  else if(a==='catCustomOk'){const v=($('cat-custom').value||'').trim();if(v.length<2){toast('카테고리를 2글자 이상 입력하세요.');return;}S.form.cat=v;S.form.catNewKind=catKind(v)?'':S.cat.kind;S.cat.mode='search';renderCatPicker();}
+  else if(a==='catChange'){S.form.cat='';S.form.catNewKind='';S.cat.q='';S.cat.mode='search';renderCatPicker();$('cat-q')&&$('cat-q').focus();}
+  else if(a==='addItem'){S.form.items.push('');renderPanel();const i=S.form.items.length-1;$('it-'+i)&&$('it-'+i).focus();}
+  else if(a==='rmItem'){S.form.items.splice(Number(t.dataset.i),1);renderPanel();}
+  else if(a==='addSpk'){S.form.speakers.push({spk:'',aff:'',topic:''});renderPanel();const i=S.form.speakers.length-1;$('sp-'+i)&&$('sp-'+i).focus();}
+  else if(a==='rmSpk'){const i=Number(t.dataset.i),c=S.form.chair;S.form.speakers.splice(i,1);if(c.mode==='spk'){if(c.idx===i){c.mode='none';c.idx=-1;}else if(c.idx>i)c.idx--;}renderPanel();}
+  else if(a==='edit'){const x=S.apps[S.sel];S.form=formFromApp(x);resetCatUI();S.editing=true;S.mode='form';S.err='';renderPanel();}
   else if(a==='cancelEdit'){S.editing=false;S.mode='detail';S.err='';renderPanel();}
   else if(a==='askCancel'){S.confirmCancel=true;renderPanel();}
   else if(a==='noCancel'){S.confirmCancel=false;renderPanel();}
@@ -875,9 +978,22 @@ document.addEventListener('input',(e)=>{
   if(t.id==='su-co-custom'){S.su.coQ=t.value;return;}
   if(t.id==='al-q'){S.al.q=t.value;renderLedger();return;}
   if(t.id==='mm-q'){S.mem.q=t.value;renderMembers();return;}
+  if(t.id==='cat-q'){S.cat.q=t.value;renderCatResults();return;}
+  if(t.id==='cat-custom'){S.cat.q=t.value;return;}
   if(!S.form)return;
+  if(t.id==='f-type'){setType(t.value);return;}
+  if(t.id==='f-chair'){setChair(t.value);return;}
   if(t.dataset.f){S.form[t.dataset.f]=t.value;if(['type','mode','recruit'].includes(t.dataset.f)&&$('price'))$('price').innerHTML=priceHtml();}
-  else if(t.dataset.sp){S.form.speakers[Number(t.dataset.sp)][t.dataset.spf]=t.value;}
+  else if(t.dataset.sp){const i=Number(t.dataset.sp);S.form.speakers[i][t.dataset.spf]=t.value;if(t.dataset.spf==='spk'){const o=document.querySelector('#f-chair option[value="s'+i+'"]');if(o)o.textContent=chairOptLabel(S.form.speakers[i],i);}}
+  else if(t.dataset.it){S.form.items[Number(t.dataset.it)]=t.value;}
+  else if(t.dataset.ch){S.form.chair[t.dataset.ch]=t.value;}
+});
+function setType(v){if(S.form.type===v)return;S.form.type=v;padSympo(S.form);renderPanel();$('f-type')&&$('f-type').focus();}
+function setChair(v){const c=S.form.chair;if(v==='none'){c.mode='none';c.idx=-1;}else if(v==='sep'){c.mode='sep';c.idx=-1;}else{c.mode='spk';c.idx=Number(v.slice(1));}renderPanel();$('f-chair')&&$('f-chair').focus();}
+document.addEventListener('keydown',(e)=>{
+  if(e.key!=='Enter')return;const t=e.target;
+  if(t.id==='cat-q'){e.preventDefault();const b=document.querySelector('#catResults button[data-cat]');if(b)b.click();}
+  else if(t.id==='cat-custom'){e.preventDefault();const b=document.querySelector('[data-act="catCustomOk"]');b&&b.click();}
 });
 document.addEventListener('change',(e)=>{
   const t=e.target;
@@ -889,6 +1005,8 @@ document.addEventListener('change',(e)=>{
   if(t.id==='mm-st'){S.mem.st=t.value;renderMembers();return;}
   if(t.id==='al-from'){S.al.from=t.value;renderLedger();return;}
   if(t.id==='al-to'){S.al.to=t.value;renderLedger();return;}
+  if(t.id==='f-type'){setType(t.value);return;}
+  if(t.id==='f-chair'){setChair(t.value);return;}
   if(t.id==='f-survey'){S.form.surveyOn=t.checked;if(!t.checked)S.form.survey='';renderPanel();}
   else if(t.dataset&&t.dataset.f&&S.form){S.form[t.dataset.f]=t.value;if($('price'))$('price').innerHTML=priceHtml();}
 });

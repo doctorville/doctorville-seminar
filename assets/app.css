@@ -269,3 +269,8 @@ table.full tr:hover td.first{background:var(--accent-soft)}
 .spgrp+.spgrp{border-top:1px dashed var(--line);padding-top:8px}
 .sptopic .fld{flex:1 1 0}
 .chairtag{font-size:11px;font-weight:700;color:var(--accent);margin-left:4px}
+.tag.pg{background:transparent;border:1px solid currentColor;line-height:14px}
+.tag.pg-done{color:var(--ok)}
+.tag.pg-hold{color:var(--warn)}
+.tag.pg-cxl{color:var(--danger)}
+.adminbox .kv{margin:0}

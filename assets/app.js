@@ -10,6 +10,11 @@ const STATUS_ORDER=['req','rev','adj','ok'];
 const TYPES=['줌 라이브세미나','현장 라이브세미나','웹심포지움'];
 const MODES=['생방송','재송출','녹화','녹화송출'];
 const SURVEYS=['인식형','리뷰형','분석형','적용형'];
+const PROGRESS=['진행예정','진행완료','연기','취소'];
+const SURVEY_ST=['준비중','진행중','마감','결과전달'];
+const MEAL_TIME={L:['12:00','13:00'],D:['19:00','20:00']};
+const timeText=a=>a.startTime&&a.endTime?a.startTime+'~'+a.endTime:(a.startTime||a.adm.time||'');
+const surveyStText=a=>a.surveyStatus||(a.surveyOn?'준비 전':'해당 없음');
 const DOW=['월','화','수','목','금'];
 const CAT_KINDS=['질환','진료과'];
 const CAT_PRESET={
@@ -87,13 +92,13 @@ function fromRow(r){
   const adm={};Object.keys(ADMMAP).forEach(k=>{const v=ad[ADMMAP[k]];adm[k]=v==null?'':String(v);});
   return{id:r.id,key:r.slot_key,date:r.event_date,meal:r.meal,slot:r.slot,company:r.company,userId:r.user_id,applicant:r.applicant||'',status:r.status,acad:r.acad,type:r.type,mode:r.mode,cat:r.category||'',
     leadItem:r.lead_item||'',item:r.item||'',title:r.title,topic:r.topic||'',speakers:Array.isArray(r.speakers)?r.speakers:[],recruit:r.recruit==null?'':String(r.recruit),surveyOn:!!r.survey_on,survey:r.survey||'',
-    pm:r.pm||'',adjustNote:r.adjust_note||'',adminRegistered:!!r.admin_registered,priceList:r.price_list,vendorId:r.vendor_id==null?null:r.vendor_id,adm};
+    pm:r.pm||'',adjustNote:r.adjust_note||'',adminRegistered:!!r.admin_registered,priceList:r.price_list,vendorId:r.vendor_id==null?null:r.vendor_id,startTime:r.start_time||'',endTime:r.end_time||'',progress:r.progress||'진행예정',surveyStatus:r.survey_status||'',adm};
 }
 function toRow(f,key){
   const [date,meal,n]=key.split('_');const p=calcPrice(f);
   return{event_date:date,meal,slot:Number(n),acad:f.acad,type:f.type,mode:f.mode,category:f.cat,lead_item:f.leadItem.trim(),item:f.items.map(x=>x.trim()).filter(Boolean).join(', '),title:f.title.trim(),topic:f.topic.trim(),
     speakers:speakersOut(f),recruit:f.recruit===''?null:parseInt(f.recruit,10),
-    survey_on:!!f.surveyOn,survey:f.surveyOn?f.survey:'',pm:f.pm.trim(),price_list:p.ok?p.v:null};
+    survey_on:!!f.surveyOn,survey:f.surveyOn?f.survey:'',pm:f.pm.trim(),price_list:p.ok?p.v:null,start_time:f.startTime||'',end_time:f.endTime||''};
 }
 function speakersOut(f){
   const sym=isSympo(f);const out=[];
@@ -111,7 +116,7 @@ function formFromApp(x){
   const ci=sp.findIndex(s=>s.chair);
   const chair=ch?{mode:'sep',idx:-1,spk:ch.spk||'',aff:ch.aff||''}:(ci>=0?{mode:'spk',idx:ci,spk:'',aff:''}:{mode:'none',idx:-1,spk:'',aff:''});
   sp=sp.map(s=>({spk:s.spk,aff:s.aff,topic:s.topic}));
-  const f={acad:x.acad,type:x.type,mode:x.mode,company:x.company,cat:x.cat,leadItem:x.leadItem,items:x.item?x.item.split(/\s*,\s*/).filter(Boolean):[''],title:x.title,topic:x.topic,speakers:sp.length?sp:[{spk:'',aff:'',topic:''}],chair,recruit:x.recruit,surveyOn:x.surveyOn,survey:x.survey,pm:x.pm};
+  const f={acad:x.acad,type:x.type,mode:x.mode,company:x.company,cat:x.cat,leadItem:x.leadItem,items:x.item?x.item.split(/\s*,\s*/).filter(Boolean):[''],title:x.title,topic:x.topic,speakers:sp.length?sp:[{spk:'',aff:'',topic:''}],chair,recruit:x.recruit,surveyOn:x.surveyOn,survey:x.survey,pm:x.pm,startTime:x.startTime||'',endTime:x.endTime||''};
   if(!f.items.length)f.items=[''];
   padSympo(f);return f;
 }
@@ -131,7 +136,7 @@ function fromVendorRow(r){
   adm.time=r.time_text||'';adm.cid=r.cid||'';adm.channel=r.channel||'';adm.manager=r.manager||'';adm.pmInternal=r.pm_internal||'';adm.surveyDist=r.survey_dist||'';adm.replay=r.replay||'';
   return{id:r.slot_key,key:r.slot_key,date:r.event_date,meal:r.meal,slot:r.slot,company:r.company,userId:null,applicant:'',status:r.status,acad:r.acad,type:r.type,mode:r.mode,cat:r.category||'',
     leadItem:r.lead_item||'',item:r.item||'',title:r.title,topic:r.topic||'',speakers:Array.isArray(r.speakers)?r.speakers:[],recruit:r.recruit==null?'':String(r.recruit),surveyOn:!!r.survey_on,survey:r.survey||'',
-    pm:r.pm||'',adjustNote:r.adjust_note||'',adminRegistered:false,priceList:null,vendorId:null,adm};
+    pm:r.pm||'',adjustNote:r.adjust_note||'',adminRegistered:false,priceList:null,vendorId:null,startTime:r.start_time||'',endTime:r.end_time||'',progress:r.progress||'진행예정',surveyStatus:r.survey_status||'',adm};
 }
 async function loadVendors(){const r=await sb.from('vendors').select('*').order('name');if(!r.error)S.vendors=r.data;}
 const vendorName=(id)=>{const v=S.vendors.find(x=>x.id===id);return v?v.name:'';};
@@ -357,7 +362,9 @@ function bar(ds,meal,n,past){
     k=a.status;ch=ST[a.status].ch;text=(isAdmin()||isVendor()?a.company+' · ':'')+a.title;
     if(aslot||a.adminRegistered)tags+='<span class="tag adm">관리자</span>';
     tags+=typeTag(a.type);if(a.acad==='비학술')na='<span class="tag na">비학술</span>';
-    title=slotLabel(key)+' · '+ST[a.status].label+' · '+a.type+' · '+a.title;
+    if(a.progress&&a.progress!=='진행예정')na+='<span class="tag pg pg-'+({'진행완료':'done','연기':'hold','취소':'cxl'}[a.progress]||'')+'">'+esc(a.progress==='진행완료'?'완료':a.progress)+'</span>';
+    if(timeText(a))text=timeText(a).split('~')[0]+' '+text;
+    title=slotLabel(key)+(timeText(a)?' '+timeText(a):'')+' · '+ST[a.status].label+' · '+a.progress+' · '+a.type+' · '+a.title;
   }else if(taken&&isVendor()){
     return '<button type="button" class="bar k-oth k-blur'+(n===4?' a4':'')+'" disabled title="배정되지 않은 일정" aria-label="'+esc(slotLabel(key))+' · 배정되지 않은 일정(비공개)"><span class="pill">·</span><span class="t blurtxt" aria-hidden="true">■■■■ ■■■ ■■■■■</span></button>';
   }else if(taken){k='oth';ch='·';text='세미나 확정';title=slotLabel(key)+' · 세미나 확정';}
@@ -386,7 +393,7 @@ function renderCal(){
 }
 function blankForm(key){
   const meal=key.split('_')[1];
-  const f={acad:'학술',type:meal==='D'?'웹심포지움':'줌 라이브세미나',mode:'생방송',company:isAdmin()?'':S.me.company,cat:'',leadItem:'',items:[''],title:'',topic:'',speakers:[{spk:'',aff:'',topic:''}],chair:{mode:'none',idx:-1,spk:'',aff:''},recruit:'',surveyOn:false,survey:'',pm:''};
+  const f={acad:'학술',type:meal==='D'?'웹심포지움':'줌 라이브세미나',mode:'생방송',company:isAdmin()?'':S.me.company,cat:'',leadItem:'',items:[''],title:'',topic:'',speakers:[{spk:'',aff:'',topic:''}],chair:{mode:'none',idx:-1,spk:'',aff:''},recruit:'',surveyOn:false,survey:'',pm:'',startTime:MEAL_TIME[meal][0],endTime:MEAL_TIME[meal][1]};
   padSympo(f);return f;
 }
 function selectSlot(key){
@@ -464,6 +471,8 @@ function formHtml(){
   if(n>=4)h+='<div class="note info">관리자 등록 슬롯입니다. 신청 회사를 지정해 등록하세요.</div>';
   h+='<div class="row2"><div class="fld"><label for="f-type">유형</label><select id="f-type" data-f="type">'+opt(TYPES,f.type)+'</select></div>'
    +'<div class="fld"><label for="f-mode">송출형태</label><select id="f-mode" data-f="mode">'+opt(MODES,f.mode)+'</select></div></div>';
+  h+='<div class="row2"><div class="fld"><label for="f-st">시작 시간 <span class="req-mark">*</span></label><input id="f-st" type="time" step="300" data-f="startTime" value="'+esc(f.startTime)+'"></div>'
+   +'<div class="fld"><label for="f-et">종료 시간 <span class="req-mark">*</span></label><input id="f-et" type="time" step="300" data-f="endTime" value="'+esc(f.endTime)+'"></div></div>';
   h+='<div class="row2"><div class="fld"><label for="f-co">회사</label><input id="f-co" data-f="company" value="'+esc(f.company)+'"'+(isAdmin()&&!S.editing?' placeholder="신청 회사명" list="co-list"':' readonly')+'>'+(isAdmin()?'<datalist id="co-list">'+PHARMA.concat(S.customCos).map(c=>'<option value="'+esc(c)+'"></option>').join('')+'</datalist>':'')+'</div>'
    +'<div class="fld"><label for="f-lead">리드 품목</label><input id="f-lead" data-f="leadItem" placeholder="대표 품목" value="'+esc(f.leadItem)+'"></div></div>';
   h+='<div class="box"><span class="lbl">카테고리 <span style="font-weight:400;color:var(--ink-3)">· 질환별 또는 진료과</span></span><div id="catPicker" class="copicker"></div></div>';
@@ -518,7 +527,7 @@ function detailHtml(){
   h+='<div class="steps">'+STATUS_ORDER.map((k,i)=>{let on=i<=cur;if(a.status==='ok'&&k==='adj')on=false;return '<div class="s'+(i===cur?' cur':'')+'"><span class="c'+(on?' p-'+k:'')+'"'+(on?' style="border-color:transparent"':'')+'>'+(i+1)+'</span>'+ST[k].label+'</div>';}).join('')+'</div>';
   if(a.adjustNote)h+='<div class="note adj">'+esc(a.adjustNote)+'</div>';
   const sp=speakersText(a,'\n')||'-';
-  const rows=[['학술 구분',a.acad],['회사',a.company],['신청자',a.applicant||'-'],['카테고리',catLabel(a.cat)||'-'],['리드 품목',a.leadItem||'-'],['품목',a.item||'-'],['행사명',a.title],['연제',a.topic||'-'],[isSympo(a)?'좌장 · 연자 · 주제':'연자 · 소속',sp],['모집 인원',a.recruit?fmtN(a.recruit)+'명':'-'],['심화설문',a.surveyOn?'신청 · '+a.survey:'미신청'],['담당PM',a.pm||'-']];
+  const rows=[['진행 시간',timeText(a)||'-'],['웨비나 진행',a.progress],['설문 진행',surveyStText(a)],['학술 구분',a.acad],['회사',a.company],['신청자',a.applicant||'-'],['카테고리',catLabel(a.cat)||'-'],['리드 품목',a.leadItem||'-'],['품목',a.item||'-'],['행사명',a.title],['연제',a.topic||'-'],[isSympo(a)?'좌장 · 연자 · 주제':'연자 · 소속',sp],['모집 인원',a.recruit?fmtN(a.recruit)+'명':'-'],['심화설문',a.surveyOn?'신청 · '+a.survey:'미신청'],['담당PM',a.pm||'-']];
   if(isAdmin())rows.push(['배정 외주사',vendorName(a.vendorId)||'미배정']);
   h+='<dl class="kv">'+rows.map(r=>'<div><dt>'+r[0]+'</dt><dd>'+esc(r[1])+'</dd></div>').join('')+'</dl>';
   h+='<div class="note info" style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><span>예상 금액</span><b style="font-size:18px;font-variant-numeric:tabular-nums">'+p+'</b></div>';
@@ -528,12 +537,26 @@ function detailHtml(){
     else h+='<div style="display:flex;gap:8px"><button type="button" class="btn" style="flex:1" data-act="edit">내용 수정</button><button type="button" class="btn danger" style="flex:1" data-act="askCancel">'+(isAdmin()?'일정 삭제':'신청 취소')+'</button></div>';
   }else if(a.adminRegistered)h+='<div class="note info">닥터빌 관리자가 등록한 일정입니다. 변경은 담당 운영자에게 문의해 주세요.</div>';
   else if(!isAdmin())h+='<div class="note info">검토 중이거나 확정된 신청은 운영팀에 문의해 변경해 주세요.</div>';
+  if(!isAdmin()){
+    h+='<div class="adminbox"><span class="lbl">웨비나 진행 상태</span><div style="display:flex;gap:8px;align-items:flex-end"><div class="fld" style="flex:1"><label for="pg-sel" class="sr">웨비나 진행 상태</label><select id="pg-sel">'+opt(PROGRESS,a.progress)+'</select></div><button type="button" class="btn" data-act="saveProg">변경</button></div>'
+     +'<span style="font-size:12px;color:var(--ink-3)">진행 상태를 바꾸면 닥터빌 운영팀에 알림이 갑니다. 설문 진행 상태는 운영팀이 관리합니다.</span></div>';
+  }
   if(isAdmin()){
-    h+='<div class="adminbox"><span class="lbl">진행 상태 변경</span>'
-     +'<div class="fld"><label for="adm-st">상태</label><select id="adm-st">'+STATUS_ORDER.map(k=>'<option value="'+k+'"'+(k===a.status?' selected':'')+'>'+ST[k].label+'</option>').join('')+'</select></div>'
+    h+='<div class="adminbox"><span class="lbl">운영 관리</span>'
+     +'<div class="row2"><div class="fld"><label for="adm-st">신청 상태</label><select id="adm-st">'+STATUS_ORDER.map(k=>'<option value="'+k+'"'+(k===a.status?' selected':'')+'>'+ST[k].label+'</option>').join('')+'</select></div>'
+     +'<div class="fld"><label for="adm-pg">웨비나 진행</label><select id="adm-pg">'+opt(PROGRESS,a.progress)+'</select></div></div>'
+     +'<div class="row2"><div class="fld"><label for="adm-ss">설문 진행</label><select id="adm-ss"><option value="">'+(a.surveyOn?'준비 전':'해당 없음')+'</option>'+opt(SURVEY_ST,a.surveyStatus)+'</select></div>'
+     +'<div class="fld"><label for="adm-cid">CID</label><input id="adm-cid" value="'+esc(a.adm.cid)+'"></div></div>'
+     +'<div class="fld"><label for="adm-mgr">행사 담당자</label><input id="adm-mgr" placeholder="이름 / 연락처" value="'+esc(a.adm.manager)+'"></div>'
      +'<div class="fld"><label for="adm-note">조정 · 안내 메모</label><textarea id="adm-note" placeholder="조정 사유나 안내 내용 (신청자 화면에 표시)">'+esc(a.adjustNote||'')+'</textarea></div>'
-     +'<span style="font-size:12px;color:var(--ink-3)">상태가 바뀌면 신청자에게 자동으로 알림이 갑니다.</span>'
-     +'<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn" data-act="admSave" style="flex:1">상태 저장</button><button type="button" class="btn" data-rec="'+S.sel+'" style="flex:1">협의 내용 기록</button></div></div>';
+     +'<span style="font-size:12px;color:var(--ink-3)">신청 상태 · 웨비나 진행 · 설문 진행이 바뀌면 신청자에게 알림이 갑니다. CID · 담당자는 관리자만 봅니다.</span>'
+     +'<button type="button" class="btn primary" data-act="admSave">운영 정보 저장</button></div>';
+    const res=[['채널',a.adm.channel],['설문 배포',a.adm.surveyDist],['신청자 수',a.adm.applicants?fmtN(a.adm.applicants)+'명':''],['참석자 수',a.adm.attendees?fmtN(a.adm.attendees)+'명':''],['설문 참여자 수',a.adm.surveyParticipants?fmtN(a.adm.surveyParticipants)+'명':''],['개인정보동의',a.adm.privacy],['질문',a.adm.questions],['다시보기',a.adm.replay]];
+    const bp=basePrice(a),fp=finalPrice(a);
+    const fin=[['기본 금액',typeof bp==='number'?won(bp):(bp||'')],['심화설문 지급',a.adm.surveyPay!==''?won(Number(a.adm.surveyPay)):''],['심화설문 청구',a.adm.surveyBill!==''?won(Number(a.adm.surveyBill)):''],['최종 금액',fp!==''?won(fp):'']];
+    h+='<div class="adminbox"><span class="lbl">운영 결과</span><dl class="kv">'+res.map(r=>'<div><dt>'+r[0]+'</dt><dd>'+esc(r[1]||'-')+'</dd></div>').join('')+'</dl>'
+     +'<span class="lbl">정산</span><dl class="kv">'+fin.map(r=>'<div><dt>'+r[0]+'</dt><dd>'+esc(r[1]||'-')+'</dd></div>').join('')+'</dl>'
+     +'<button type="button" class="btn" data-rec="'+S.sel+'">운영 결과 · 정산 입력</button></div>';
   }
   return h+'</div>';
 }
@@ -541,6 +564,8 @@ async function submitForm(){
   const f=S.form;const key=S.sel;
   if(!f.title.trim()){S.err='행사명을 입력해 주세요.';renderPanel();$('f-title')&&$('f-title').focus();return;}
   if(isAdmin()&&!f.company.trim()){S.err='신청 회사를 입력해 주세요.';renderPanel();return;}
+  if(!f.startTime||!f.endTime){S.err='진행 시간(시작 · 종료)을 입력해 주세요.';renderPanel();return;}
+  if(f.endTime<=f.startTime){S.err='종료 시간은 시작 시간보다 늦어야 합니다.';renderPanel();return;}
   if(f.surveyOn&&!f.survey){S.err='심화설문 유형(인식형 · 리뷰형 · 분석형 · 적용형)을 선택해 주세요.';renderPanel();return;}
   if(!S.editing&&S.locks.has(key)){S.err='방금 다른 신청이 접수된 슬롯입니다. 다른 빈자리를 선택하세요.';renderPanel();return;}
   S.busy=true;S.err='';renderPanel();
@@ -564,10 +589,23 @@ async function submitForm(){
   renderCal();renderPanel();renderSummary();
 }
 async function adminSave(){
-  const a=S.apps[S.sel];const st=$('adm-st').value;const note=$('adm-note').value.trim();
-  const r=await sb.from('applications').update({status:st,adjust_note:note}).eq('id',a.id);
-  if(r.error){toast(errMsg(r.error,'저장하지 못했습니다. 다시 시도하세요.'));return;}
-  toast(st!==a.status?'상태를 저장했습니다. 신청자에게 알림이 갑니다.':'저장했습니다.');scheduleRefresh();
+  const a=S.apps[S.sel];const st=$('adm-st').value,note=$('adm-note').value.trim(),pg=$('adm-pg').value,ss=$('adm-ss').value,cid=$('adm-cid').value.trim(),mgr=$('adm-mgr').value.trim();
+  if(cid!==a.adm.cid||mgr!==a.adm.manager){
+    const r0=await sb.from('application_admin').upsert({application_id:a.id,cid,manager:mgr});
+    if(r0.error){toast(errMsg(r0.error,'CID · 담당자를 저장하지 못했습니다.'));return;}
+  }
+  const ch=st!==a.status||pg!==a.progress||ss!==a.surveyStatus;
+  if(ch||note!==a.adjustNote){
+    const r=await sb.from('applications').update({status:st,adjust_note:note,progress:pg,survey_status:ss}).eq('id',a.id);
+    if(r.error){toast(errMsg(r.error,'저장하지 못했습니다. 다시 시도하세요.'));return;}
+  }
+  toast(ch?'저장했습니다. 신청자에게 알림이 갑니다.':'저장했습니다.');scheduleRefresh();
+}
+async function saveProgress(){
+  const a=S.apps[S.sel];const pg=$('pg-sel').value;if(pg===a.progress){toast('바뀐 내용이 없습니다.');return;}
+  const r=await sb.rpc('set_progress',{p_slot_key:S.sel,p_progress:pg});
+  if(r.error){toast(errMsg(r.error,'진행 상태를 바꾸지 못했습니다.'));return;}
+  a.progress=pg;renderPanel();renderCal();toast('진행 상태를 '+pg+'(으)로 바꿨습니다. 운영팀에 알림이 갑니다.');scheduleRefresh();
 }
 async function doCancel(){
   const a=S.apps[S.sel];const key=S.sel;
@@ -581,7 +619,7 @@ function vendorDetailHtml(){
   if(a.adjustNote)h+='<div class="note adj">'+esc(a.adjustNote)+'</div>';
   const sp=speakersText(a,'\n')||'-';
   const rows=[['회사',a.company],['행사명',a.title],['연제',a.topic||'-'],[isSympo(a)?'좌장 · 연자 · 주제':'연자 · 소속',sp],['카테고리',catLabel(a.cat)||'-'],['리드 품목',a.leadItem||'-'],['품목',a.item||'-'],['모집 인원',a.recruit?fmtN(a.recruit)+'명':'-'],['심화설문',a.surveyOn?'신청 · '+a.survey:'미신청'],['신청 PM',a.pm||'-'],
-    ['시간',a.adm.time||'-'],['CID',a.adm.cid||'-'],['채널',a.adm.channel||'-'],['담당자',a.adm.manager||'-'],['PM(내부)',a.adm.pmInternal||'-'],['설문 배포',a.adm.surveyDist||'-'],['다시보기',a.adm.replay||'-']];
+    ['진행 시간',timeText(a)||'-'],['웨비나 진행',a.progress],['설문 진행',surveyStText(a)],['CID',a.adm.cid||'-'],['채널',a.adm.channel||'-'],['행사 담당자',a.adm.manager||'-'],['PM(내부)',a.adm.pmInternal||'-'],['설문 배포',a.adm.surveyDist||'-'],['다시보기',a.adm.replay||'-']];
   h+='<dl class="kv">'+rows.map(r=>'<div><dt>'+r[0]+'</dt><dd>'+esc(r[1])+'</dd></div>').join('')+'</dl>';
   h+='<div class="note info">외주사 계정은 조회만 가능합니다. 변경이 필요하면 닥터빌 운영팀에 요청하세요.</div>';
   return h+'</div>';
@@ -592,9 +630,9 @@ function renderMine(){
   let h='<div class="toolbar"><div><h1>내 신청 현황</h1><p class="sub">'+esc(S.me.company)+' 소속으로 신청된 일정입니다.</p></div></div>';
   if(!rows.length)h+='<div class="listbox"><div class="empty">아직 신청한 일정이 없습니다. ‘일정 신청’ 탭에서 빈자리를 선택해 신청하세요.</div></div>';
   else{
-    h+='<div class="listbox"><table class="list"><thead><tr><th>일정</th><th>구분</th><th>유형</th><th>행사명</th><th>모집 인원</th><th>예상 금액</th><th>상태</th><th></th></tr></thead><tbody>';
+    h+='<div class="listbox"><table class="list"><thead><tr><th>일정</th><th>시간</th><th>유형</th><th>행사명</th><th>모집 인원</th><th>예상 금액</th><th>상태</th><th>웨비나 진행</th><th>설문 진행</th><th></th></tr></thead><tbody>';
     rows.forEach(([k,a])=>{
-      h+='<tr><td style="white-space:nowrap">'+esc(slotLabel(k))+'</td><td>'+esc(a.acad)+'</td><td style="white-space:nowrap">'+esc(a.type)+'</td><td>'+esc(a.title)+'</td><td class="num">'+(a.recruit?fmtN(a.recruit)+'명':'-')+'</td><td class="num">'+(a.acad==='비학술'?'산정 제외':(a.priceList!=null?won(a.priceList):'별도 협의'))+'</td><td><span class="stbadge p-'+a.status+'" style="font-size:12px">'+ST[a.status].label+'</span></td><td><button type="button" class="btn sm" data-goto="'+k+'">보기</button></td></tr>';
+      h+='<tr><td style="white-space:nowrap">'+esc(slotLabel(k))+'</td><td style="white-space:nowrap">'+esc(timeText(a)||'-')+'</td><td style="white-space:nowrap">'+esc(a.type)+'</td><td>'+esc(a.title)+'</td><td class="num">'+(a.recruit?fmtN(a.recruit)+'명':'-')+'</td><td class="num">'+(a.acad==='비학술'?'산정 제외':(a.priceList!=null?won(a.priceList):'별도 협의'))+'</td><td><span class="stbadge p-'+a.status+'" style="font-size:12px">'+ST[a.status].label+'</span></td><td>'+esc(a.progress)+'</td><td>'+esc(surveyStText(a))+'</td><td><button type="button" class="btn sm" data-goto="'+k+'">보기</button></td></tr>';
     });
     h+='</tbody></table></div>';
   }
@@ -606,9 +644,9 @@ function renderVendorList(){
   let h='<div class="toolbar"><div><h1>배정 목록</h1><p class="sub">'+esc(S.me.company)+'에 배정된 세미나입니다.</p></div></div>';
   if(!rows.length)h+='<div class="listbox"><div class="empty">아직 배정된 세미나가 없습니다. 배정되면 알림으로 안내드립니다.</div></div>';
   else{
-    h+='<div class="listbox"><table class="list"><thead><tr><th>일정</th><th>시간</th><th>회사</th><th>유형</th><th>송출형태</th><th>행사명</th><th>연자</th><th>CID</th><th>채널</th><th>상태</th><th></th></tr></thead><tbody>';
+    h+='<div class="listbox"><table class="list"><thead><tr><th>일정</th><th>시간</th><th>회사</th><th>유형</th><th>송출형태</th><th>행사명</th><th>연자</th><th>CID</th><th>채널</th><th>진행</th><th>상태</th><th></th></tr></thead><tbody>';
     rows.forEach(([k,a])=>{
-      h+='<tr><td style="white-space:nowrap">'+esc(slotLabel(k))+'</td><td>'+esc(a.adm.time||'-')+'</td><td>'+esc(a.company)+'</td><td style="white-space:nowrap">'+esc(a.type)+'</td><td>'+esc(a.mode)+'</td><td>'+esc(a.title)+'</td><td>'+esc(speakersText(a,', ')||'-')+'</td><td>'+esc(a.adm.cid||'-')+'</td><td>'+esc(a.adm.channel||'-')+'</td><td><span class="stbadge p-'+a.status+'" style="font-size:12px">'+ST[a.status].label+'</span></td><td><button type="button" class="btn sm" data-goto="'+k+'">보기</button></td></tr>';
+      h+='<tr><td style="white-space:nowrap">'+esc(slotLabel(k))+'</td><td style="white-space:nowrap">'+esc(timeText(a)||'-')+'</td><td>'+esc(a.company)+'</td><td style="white-space:nowrap">'+esc(a.type)+'</td><td>'+esc(a.mode)+'</td><td>'+esc(a.title)+'</td><td>'+esc(speakersText(a,', ')||'-')+'</td><td>'+esc(a.adm.cid||'-')+'</td><td>'+esc(a.adm.channel||'-')+'</td><td>'+esc(a.progress)+'</td><td><span class="stbadge p-'+a.status+'" style="font-size:12px">'+ST[a.status].label+'</span></td><td><button type="button" class="btn sm" data-goto="'+k+'">보기</button></td></tr>';
     });
     h+='</tbody></table></div>';
   }
@@ -620,8 +658,8 @@ const MONEY=new Set(['기본 금액','심화설문 지급','심화설문 청구'
 const NUMS=new Set(['모집 인원','신청자 수','참석자 수','설문 참여자 수']);
 const WRAP=new Set(['행사명','연제','강사명(소속)']);
 const COLS=[
- ['no.',(a,k,i)=>i+1],['상태',a=>ST[a.status].label],['일시',a=>a.date],['시간',a=>a.adm.time||((a.meal==='L'?'점심':'저녁')+' '+a.slot+'번')],
- ['CID',a=>a.adm.cid],['설문 배포',a=>a.adm.surveyDist],['유형',a=>a.type],['송출형태',a=>a.mode],['업체',a=>vendorName(a.vendorId)||a.adm.vendor],['채널',a=>a.adm.channel],['담당자',a=>a.adm.manager],
+ ['no.',(a,k,i)=>i+1],['상태',a=>ST[a.status].label],['웨비나 진행',a=>a.progress],['일시',a=>a.date],['시간',a=>timeText(a)||((a.meal==='L'?'점심':'저녁')+' '+a.slot+'번')],
+ ['CID',a=>a.adm.cid],['설문 진행',a=>surveyStText(a)],['설문 배포',a=>a.adm.surveyDist],['유형',a=>a.type],['송출형태',a=>a.mode],['업체',a=>vendorName(a.vendorId)||a.adm.vendor],['채널',a=>a.adm.channel],['행사 담당자',a=>a.adm.manager],
  ['구분',a=>a.acad],['회사',a=>a.company],['카테고리',a=>catLabel(a.cat)],['리드 품목',a=>a.leadItem],['품목',a=>a.item],['PM(내부)',a=>a.adm.pmInternal],
  ['행사명',a=>a.title],['연제',a=>a.topic],['강사명(소속)',a=>speakersText(a,'; ')],['PM',a=>a.pm],['설문 유형',a=>a.surveyOn?a.survey:'미신청'],
  ['모집 인원',a=>nOrBlank(a.recruit)],['신청자 수',a=>nOrBlank(a.adm.applicants)],['참석자 수',a=>nOrBlank(a.adm.attendees)],['설문 참여자 수',a=>nOrBlank(a.adm.surveyParticipants)],
@@ -675,7 +713,7 @@ function renderLedger(){
   el.innerHTML=h;
 }
 const ADMF=[
- ['운영 정보',[['time','시간','예) 12:30~13:30'],['cid','CID',''],['surveyDist','설문 배포','예) 배포 / 미배포'],['vendor','업체',''],['channel','채널',''],['manager','담당자',''],['pmInternal','PM(내부)','']]],
+ ['운영 정보',[['cid','CID',''],['surveyDist','설문 배포','예) 배포 / 미배포'],['vendor','업체',''],['channel','채널',''],['manager','행사 담당자','이름 / 연락처'],['pmInternal','PM(내부)','']]],
  ['행사 결과',[['applicants','신청자 수',''],['attendees','참석자 수',''],['surveyParticipants','설문 참여자 수',''],['privacy','개인정보동의','예) 동의 1,240명'],['questions','질문','예) 12건'],['replay','다시보기','예) 제공 / 미제공 / URL']]],
  ['정산',[['basePrice','기본 금액',''],['surveyPay','심화설문 지급',''],['surveyBill','심화설문 청구',''],['finalPrice','최종 금액','']]]
 ];
@@ -686,6 +724,9 @@ function openRecord(key){
    +'<div class="dh2"><div><div style="font-size:12px;color:var(--accent);font-weight:500">'+esc(slotLabel(key))+'</div><div id="dr-t" style="font-size:17px;font-weight:700">'+esc(a.title)+'</div><div style="font-size:13px;color:var(--ink-2)">'+esc(a.company)+' · '+esc(a.acad)+' · '+esc(a.type)+' · '+esc(a.mode)+' · 신청 PM '+esc(a.pm||'-')+'</div></div><button type="button" class="iconbtn" data-act="closeRec" aria-label="닫기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>';
   h+='<div class="sec"><h2>진행 상태</h2><div class="row2"><div class="fld"><label for="rc-st">상태</label><select id="rc-st">'+STATUS_ORDER.map(k=>'<option value="'+k+'"'+(k===a.status?' selected':'')+'>'+ST[k].label+'</option>').join('')+'</select></div>'
    +'<div class="fld"><label for="rc-lead">리드 품목</label><input id="rc-lead" value="'+esc(a.leadItem)+'"></div></div>'
+   +'<div class="row2"><div class="fld"><label for="rc-pg">웨비나 진행</label><select id="rc-pg">'+opt(PROGRESS,a.progress)+'</select></div>'
+   +'<div class="fld"><label for="rc-ss">설문 진행</label><select id="rc-ss"><option value="">'+(a.surveyOn?'준비 전':'해당 없음')+'</option>'+opt(SURVEY_ST,a.surveyStatus)+'</select></div></div>'
+   +'<div style="font-size:13px;color:var(--ink-2)">진행 시간 <b>'+esc(timeText(a)||'미입력')+'</b> · 변경은 일정 상세의 ‘내용 수정’에서</div>'
    +'<div class="fld"><label for="rc-note">조정 · 안내 메모 (신청자에게 표시)</label><textarea id="rc-note">'+esc(a.adjustNote||'')+'</textarea></div>'
    +'<span style="font-size:12px;color:var(--ink-3)">상태가 바뀌면 신청자에게, 외주사를 배정하면 해당 외주사 계정에 자동으로 알림이 갑니다.</span></div>';
   ADMF.forEach(([sec,fs])=>{
@@ -707,11 +748,11 @@ async function saveRecord(){
   const adm={application_id:a.id};
   const vid=$('rc-vendor').value===''?null:Number($('rc-vendor').value);
   ADMF.forEach(([s,fs])=>fs.forEach(([id])=>{if(id==='vendor'){adm.vendor=vid?vendorName(vid):'';return;}const v=$('rc-'+id).value.trim();adm[ADMMAP[id]]=ADMNUM.has(id)?(v===''?null:Number(v)):v;}));
-  const st=$('rc-st').value,note=$('rc-note').value.trim(),lead=$('rc-lead').value.trim();
+  const st=$('rc-st').value,note=$('rc-note').value.trim(),lead=$('rc-lead').value.trim(),pg=$('rc-pg').value,ss=$('rc-ss').value;
   const r1=await sb.from('application_admin').upsert(adm);
   if(r1.error){toast(errMsg(r1.error,'기록을 저장하지 못했습니다.'));return;}
-  if(st!==a.status||note!==a.adjustNote||lead!==a.leadItem||vid!==a.vendorId){
-    const r2=await sb.from('applications').update({status:st,adjust_note:note,lead_item:lead,vendor_id:vid}).eq('id',a.id);
+  if(st!==a.status||note!==a.adjustNote||lead!==a.leadItem||vid!==a.vendorId||pg!==a.progress||ss!==a.surveyStatus){
+    const r2=await sb.from('applications').update({status:st,adjust_note:note,lead_item:lead,vendor_id:vid,progress:pg,survey_status:ss}).eq('id',a.id);
     if(r2.error){toast(errMsg(r2.error,'상태를 저장하지 못했습니다.'));return;}
   }
   toast('기록을 저장했습니다.');closeRecord();scheduleRefresh();
@@ -958,6 +999,7 @@ document.addEventListener('click',async(e)=>{
   else if(a==='noCancel'){S.confirmCancel=false;renderPanel();}
   else if(a==='doCancel')doCancel();
   else if(a==='admSave')adminSave();
+  else if(a==='saveProg')saveProgress();
   else if(a==='closeRec')closeRecord();
   else if(a==='saveRec')saveRecord();
   else if(a==='saveMem')saveMember();

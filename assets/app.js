@@ -225,15 +225,65 @@ function renderTop(){
 }
 
 /* ---------- auth ---------- */
+const OTP_LEN=8;
+// 메일 발송(SMTP) 설정 확인 전까지만 관리자 아이디 로그인을 임시로 허용. 확인 후 false 로 바꿔 제거.
+const ADMIN_PW_FALLBACK=true;
+function renderAdminLogin(){
+  const o=S.otp||(S.otp={email:'',step:'email',until:0});
+  let h='<div class="auth"><form class="card" id="otpForm" novalidate><h1>관리자 로그인</h1>';
+  if(o.step==='email'){
+    h+='<p class="sub" style="margin:0">등록된 관리자 메일 주소를 입력하면 '+OTP_LEN+'자리 인증번호를 보내드립니다.</p>'
+     +'<div class="fld"><label for="otp-mail">메일 주소</label><input id="otp-mail" type="email" autocomplete="email" inputmode="email" placeholder="name@mcircle.biz" value="'+esc(o.email)+'" required></div>'
+     +(S.err?'<div class="err" role="alert">'+esc(S.err)+'</div>':'')
+     +'<button class="btn primary" type="submit" id="otp-btn">인증번호 받기</button>';
+  }else{
+    const left=Math.max(0,Math.ceil((o.until-Date.now())/1000));
+    h+='<p class="sub" style="margin:0"><b>'+esc(o.email)+'</b>(으)로 보낸 '+OTP_LEN+'자리 인증번호를 입력하세요. 메일이 보이지 않으면 스팸함도 확인해 주세요.</p>'
+     +'<div class="fld"><label for="otp-code">인증번호</label><input id="otp-code" class="otpin" inputmode="numeric" autocomplete="one-time-code" maxlength="'+OTP_LEN+'" pattern="[0-9]*" placeholder="'+'0'.repeat(OTP_LEN)+'" required></div>'
+     +(S.err?'<div class="err" role="alert">'+esc(S.err)+'</div>':'')
+     +'<button class="btn primary" type="submit" id="otp-btn">로그인</button>'
+     +'<div style="display:flex;gap:12px;align-items:center;font-size:13px;color:var(--ink-2);flex-wrap:wrap"><button type="button" class="link" data-act="otpResend"'+(left?' disabled':'')+' id="otp-resend">'+(left?'재발송 ('+left+'초)':'인증번호 다시 받기')+'</button><button type="button" class="link" data-act="otpBack">메일 주소 바꾸기</button></div>';
+  }
+  if(ADMIN_PW_FALLBACK)h+='<div style="border-top:1px solid var(--line-2);padding-top:10px;font-size:12px;color:var(--ink-3)">메일 인증 준비 기간 동안만: <button type="button" class="link" data-act="pwLogin">아이디로 로그인(임시)</button></div>';
+  h+='</form></div>';
+  $('main').innerHTML=h;
+  const f=$('otp-code')||$('otp-mail');f&&f.focus();
+  clearInterval(S.otpT);if(o.step==='code'&&o.until>Date.now())S.otpT=setInterval(()=>{const b=$('otp-resend');if(!b){clearInterval(S.otpT);return;}const l=Math.max(0,Math.ceil((o.until-Date.now())/1000));b.textContent=l?'재발송 ('+l+'초)':'인증번호 다시 받기';b.disabled=!!l;if(!l)clearInterval(S.otpT);},1000);
+}
+function otpErr(e){
+  const m=((e&&e.message)||'')+' '+((e&&e.code)||'');
+  if(/database error|saving new user|관리자 메일|signups? not allowed|otp_disabled/i.test(m))return'등록된 관리자 메일이 아닙니다. 관리자 초대를 받은 메일로 입력하세요.';
+  if(/rate|too many|security purposes|429/i.test(m))return'인증 요청이 너무 잦습니다. 잠시 후 다시 시도하세요.';
+  if(/not authorized|smtp|sending|email address/i.test(m))return'인증 메일을 보내지 못했습니다. 메일 발송 설정(SMTP)을 확인해야 합니다. 운영 담당자에게 문의하세요.';
+  if(/expired|invalid|token/i.test(m))return'인증번호가 맞지 않거나 만료되었습니다. 다시 확인하거나 재발송하세요.';
+  return'처리하지 못했습니다. 잠시 후 다시 시도하세요.';
+}
+async function sendOtp(){
+  const o=S.otp;const email=(($('otp-mail')&&$('otp-mail').value)||o.email||'').trim().toLowerCase();
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){S.err='메일 주소를 정확히 입력하세요.';renderAdminLogin();return;}
+  o.email=email;const b=$('otp-btn');if(b)b.disabled=true;
+  const r=await sb.auth.signInWithOtp({email,options:{shouldCreateUser:true}});
+  if(r.error){S.err=otpErr(r.error);renderAdminLogin();return;}
+  S.err='';o.step='code';o.until=Date.now()+60000;renderAdminLogin();toast('인증번호를 보냈습니다.');
+}
+async function verifyOtp(){
+  const o=S.otp;const code=($('otp-code').value||'').replace(/\D/g,'');
+  if(code.length!==OTP_LEN){S.err=OTP_LEN+'자리 숫자를 입력하세요.';renderAdminLogin();return;}
+  $('otp-btn').disabled=true;
+  const r=await sb.auth.verifyOtp({email:o.email,token:code,type:'email'});
+  if(r.error||!r.data||!r.data.user){S.err=otpErr(r.error||{message:'invalid'});renderAdminLogin();return;}
+  S.err='';S.otp=null;clearInterval(S.otpT);await enter(r.data.user);
+}
 function renderLogin(){
   const admin=APP==='admin';
+  if(admin&&!(ADMIN_PW_FALLBACK&&S.pwMode))return renderAdminLogin();
   $('main').innerHTML='<div class="auth"><form class="card" id="loginForm" novalidate>'
   +'<h1>'+(admin?'관리자 로그인':'로그인')+'</h1><p class="sub" style="margin:0">'+(admin?'관리자 권한이 있는 계정만 이용할 수 있습니다.':'소속 회사의 세미나 일정만 상세히 보입니다.')+'</p>'
   +'<div class="fld"><label for="li-id">아이디</label><input id="li-id" autocomplete="username" required></div>'
   +'<div class="fld"><label for="li-pw">비밀번호</label><input id="li-pw" type="password" autocomplete="current-password" required></div>'
   +(S.err?'<div class="err" role="alert">'+esc(S.err)+'</div>':'')
   +'<button class="btn primary" type="submit" id="li-btn">로그인</button>'
-  +(admin?'':'<div style="display:flex;gap:6px;align-items:center;font-size:13px;color:var(--ink-2)">계정이 없으신가요? <button type="button" class="link" data-act="goSignup">회원가입</button></div>')
+  +(admin?'<button type="button" class="link" data-act="otpLogin" style="align-self:flex-start">메일 인증으로 로그인</button>':'<div style="display:flex;gap:6px;align-items:center;font-size:13px;color:var(--ink-2)">계정이 없으신가요? <button type="button" class="link" data-act="goSignup">회원가입</button></div>')
   +'</form></div>';
 }
 async function loadCustomCos(){
@@ -899,6 +949,7 @@ async function loadMembers(){
   const r=await sb.from('profiles').select('*').order('created_at',{ascending:false}).limit(5000);
   if(r.error){toast('회원 목록을 불러오지 못했습니다.');return;}
   S.mem.list=r.data;S.mem.loaded=true;await loadVendors();
+  {const iv=await sb.from('admin_invites').select('*').order('created_at');S.invites=iv.error?[]:iv.data;}
   if(!S.customCos.length){const c=await sb.from('companies').select('name').limit(5000);if(!c.error)S.customCos=c.data.map(x=>x.name);}
   if(S.tab==='members'&&!S.memDrawer)renderMembers();
 }
@@ -915,7 +966,7 @@ function appCountOf(uid){let n=0;Object.values(S.apps).forEach(a=>{if(a.userId==
 function renderMembersShell(){
   const m=S.mem;
   let h='<div class="toolbar"><div><h1>회원 관리</h1><p class="sub">가입된 계정의 정보 · 권한 · 이용 상태를 관리합니다. 변경 내역은 계정별로 기록됩니다.</p></div>'
-   +'<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn primary sm" style="height:44px" data-act="newVendorAcc">+ 외주사 계정 생성</button><button type="button" class="btn" data-act="reloadMem">새로고침</button></div></div>';
+   +'<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn primary sm" style="height:44px" data-act="newAdminInv">+ 관리자 초대</button><button type="button" class="btn sm" style="height:44px" data-act="newVendorAcc">+ 외주사 계정 생성</button><button type="button" class="btn" data-act="reloadMem">새로고침</button></div></div>';
   h+='<div class="summary" id="memSummary"></div>';
   h+='<div class="filters">'
    +'<div class="fld"><label for="mm-role">권한</label><select id="mm-role">'+[['all','전체 권한'],['member','회원'],['vendor','외주사'],['admin','관리자']].map(([v,l])=>'<option value="'+v+'"'+(m.role===v?' selected':'')+'>'+l+'</option>').join('')+'</select></div>'
@@ -943,6 +994,11 @@ function renderMembers(){
      +'<td class="num">'+appCountOf(p.id)+'</td><td class="num">'+fmtDate(p.created_at)+'</td></tr>';
   });
   h+='</tbody></table></div>';
+  if(S.invites&&S.invites.length){
+    h+='<h2 style="font-size:16px;margin:24px 0 10px">관리자 초대 대기</h2><div class="listbox"><table class="list" style="min-width:520px"><thead><tr><th>메일</th><th>이름</th><th>초대일</th><th></th></tr></thead><tbody>'
+     +S.invites.map(v=>'<tr><td><b>'+esc(v.email)+'</b></td><td>'+esc(v.name||'-')+'</td><td class="num">'+fmtDate(v.created_at)+'</td><td><button type="button" class="btn sm danger" data-delinv="'+esc(v.email)+'">취소</button></td></tr>').join('')+'</tbody></table></div>'
+     +'<p style="font-size:12px;color:var(--ink-3);margin:6px 0 0">초대한 메일로 관리자 사이트에서 인증번호를 받아 처음 로그인하면 관리자 계정이 만들어지고 목록에서 사라집니다.</p>';
+  }
   if(S.vendors.length){
     h+='<h2 style="font-size:16px;margin:24px 0 10px">외주사 목록</h2><div class="listbox"><table class="list" style="min-width:520px"><thead><tr><th>외주사</th><th>계정</th><th>배정 세미나</th><th>등록일</th></tr></thead><tbody>'
      +S.vendors.map(v=>'<tr><td><b>'+esc(v.name)+'</b></td><td class="num">'+S.mem.list.filter(p=>p.vendor_id===v.id).length+'</td><td class="num">'+Object.values(S.apps).filter(a=>a.vendorId===v.id).length+'</td><td class="num">'+fmtDate(v.created_at)+'</td></tr>').join('')+'</tbody></table></div>';
@@ -957,7 +1013,7 @@ async function openMember(id){
    +'<div class="dh2"><div><div style="font-size:12px;color:var(--accent);font-weight:500">회원 계정</div><div id="md-t" style="font-size:17px;font-weight:700">'+esc(p.login_id)+' · '+esc(p.name)+'</div><div style="font-size:13px;color:var(--ink-2)">가입 '+fmtDate(p.created_at)+(p.updated_at?' · 최근 변경 '+fmtDate(p.updated_at):'')+'</div></div><button type="button" class="iconbtn" data-act="closeRec" aria-label="닫기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>';
   h+='<div class="sec"><h2>권한 · 이용 상태</h2>'
    +(me?'<div class="note info">본인 계정의 권한과 상태는 바꿀 수 없습니다. 다른 관리자에게 요청하세요.</div>':'')
-   +'<div class="row2"><div class="fld"><label for="md-role">권한</label><select id="md-role"'+(me?' disabled':'')+'><option value="member"'+(p.role==='member'?' selected':'')+'>회원 — 신청 사이트 이용</option><option value="vendor"'+(p.role==='vendor'?' selected':'')+'>외주사 — 배정 세미나 조회만</option><option value="admin"'+(p.role==='admin'?' selected':'')+'>관리자 — 관리자 사이트 이용</option></select></div>'
+   +'<div class="row2"><div class="fld"><label for="md-role">권한</label><select id="md-role"'+(me?' disabled':'')+'><option value="member"'+(p.role==='member'?' selected':'')+'>회원 — 신청 사이트 이용</option><option value="vendor"'+(p.role==='vendor'?' selected':'')+'>외주사 — 배정 세미나 조회만</option><option value="admin"'+(p.role==='admin'?' selected':'')+(p.login_id.includes('@')?'':' disabled')+'>관리자 — 관리자 사이트 이용'+(p.login_id.includes('@')?'':' (메일 로그인 계정만)')+'</option></select></div>'
    +'<div class="fld"><label for="md-st">상태</label><select id="md-st"'+(me?' disabled':'')+'><option value="active"'+((p.status||'active')==='active'?' selected':'')+'>활성</option><option value="suspended"'+(p.status==='suspended'?' selected':'')+'>정지 — 로그인 및 조회 차단</option></select></div></div>'
    +'<div class="fld"><label for="md-vendor">소속 외주사 (외주사 권한일 때)</label><select id="md-vendor"'+(me?' disabled':'')+'><option value="">선택</option>'+S.vendors.map(v=>'<option value="'+v.id+'"'+(v.id===p.vendor_id?' selected':'')+'>'+esc(v.name)+'</option>').join('')+'</select></div>'
    +'<span style="font-size:12px;color:var(--ink-3)">외주사로 바꾸면 세미나 신청이 막히고, 그 외주사에 배정된 세미나만 볼 수 있습니다. 관리자로 바꾸면 이 계정은 신청 사이트 대신 관리자 사이트에서 로그인하며, 모든 회사의 신청 상세와 정산 기록을 볼 수 있습니다.</span></div>';
@@ -983,7 +1039,7 @@ async function saveMember(){
   const id=S.memDrawer;const p=S.mem.list.find(x=>x.id===id);if(!p)return;
   const v=(i)=>($(i).value||'').trim();
   const patch={name:v('md-name'),company:v('md-co'),dept:v('md-dept'),email:v('md-mail')};
-  if(id!==S.me.id){patch.role=$('md-role').value;patch.status=$('md-st').value;
+  if(id!==S.me.id){patch.role=$('md-role').value;patch.status=$('md-st').value;if(patch.role==='admin'&&!p.login_id.includes('@')){toast('관리자는 메일 로그인 계정만 지정할 수 있습니다. ‘+ 관리자 초대’를 이용하세요.');return;}
     if(patch.role==='vendor'){const vv=$('md-vendor').value;if(!vv){toast('외주사 권한에는 소속 외주사를 선택해야 합니다.');return;}patch.vendor_id=Number(vv);delete patch.company;}}
   if(!patch.name||!patch.company){toast('이름과 회사는 비워 둘 수 없습니다.');return;}
   const changed=Object.keys(patch).some(k=>(p[k]==null?'':p[k])!==patch[k]);
@@ -997,6 +1053,26 @@ async function saveMember(){
 }
 
 function genPassword(){const c='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';const a=new Uint32Array(12);crypto.getRandomValues(a);return Array.from(a,x=>c[x%c.length]).join('')+'!7';}
+function openAdminInvite(){
+  S.memDrawer='inv';
+  $('drawerHost').innerHTML='<div class="scrim" id="scrim"><div class="drawer" role="dialog" aria-modal="true" aria-labelledby="ai-t">'
+   +'<div class="dh2"><div><div style="font-size:12px;color:var(--accent);font-weight:500">관리자 계정</div><div id="ai-t" style="font-size:17px;font-weight:700">관리자 초대</div><div style="font-size:13px;color:var(--ink-2)">관리자는 메일 주소 + '+OTP_LEN+'자리 인증번호로 로그인합니다.</div></div><button type="button" class="iconbtn" data-act="closeRec" aria-label="닫기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>'
+   +'<div class="sec"><div class="fld"><label for="ai-mail">메일 주소 <span class="req-mark">*</span></label><input id="ai-mail" type="email" placeholder="name@mcircle.biz"></div>'
+   +'<div class="fld"><label for="ai-name">이름</label><input id="ai-name"></div>'
+   +'<div class="err" role="alert" id="ai-err" hidden></div>'
+   +'<span style="font-size:12px;color:var(--ink-3)">초대 후 해당 메일 주인이 관리자 사이트에서 인증번호로 처음 로그인하면 관리자 계정이 만들어집니다. 회사 메일 주소는 개인정보이므로 사내 기준에 따라 등록하세요.</span></div>'
+   +'<div class="foot"><button type="button" class="btn primary" style="flex:1" data-act="saveAdminInv">초대 등록</button><button type="button" class="btn" data-act="closeRec">닫기</button></div></div></div>';
+  $('ai-mail').focus();
+}
+async function saveAdminInvite(){
+  const email=($('ai-mail').value||'').trim().toLowerCase(),name=($('ai-name').value||'').trim();
+  const fail=m=>{const e=$('ai-err');e.textContent=m;e.hidden=false;};
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return fail('메일 주소를 정확히 입력하세요.');
+  if(S.mem.list.some(p=>p.login_id===email))return fail('이미 관리자 계정이 있는 메일입니다.');
+  const r=await sb.from('admin_invites').upsert({email,name,created_by:S.me.id});
+  if(r.error)return fail(errMsg(r.error,'초대를 등록하지 못했습니다.'));
+  toast('관리자 초대를 등록했습니다.');closeRecord();loadMembers();
+}
 function openVendorCreate(){
   S.memDrawer='new';
   let h='<div class="scrim" id="scrim"><div class="drawer" role="dialog" aria-modal="true" aria-labelledby="vc-t">'
@@ -1102,6 +1178,7 @@ document.addEventListener('click',async(e)=>{
   if(t.dataset.rec){openRecord(t.dataset.rec);return;}
   if(t.dataset.mem){openMember(t.dataset.mem);return;}
   if(t.dataset.vend){openVendor(Number(t.dataset.vend));return;}
+  if(t.dataset.delinv){const r=await sb.from('admin_invites').delete().eq('email',t.dataset.delinv);if(r.error)toast('초대를 취소하지 못했습니다.');else{toast('초대를 취소했습니다.');loadMembers();}return;}
   if(t.dataset.co){S.su.coSel=t.dataset.co;S.su.coMode='search';renderCoPicker();return;}
   if(t.dataset.scope){S.al.scope=t.dataset.scope;renderLedgerShell();return;}
   if(t.dataset.pick){const [f,v]=t.dataset.pick.split(':');S.form[f]=v;renderPanel();return;}
@@ -1110,6 +1187,10 @@ document.addEventListener('click',async(e)=>{
   const a=t.dataset.act;if(!a)return;
   if(a==='goSignup'){S.err='';S.view='signup';renderSignup();}
   else if(a==='goLogin'){S.err='';S.view='login';renderLogin();}
+  else if(a==='otpResend')sendOtp();
+  else if(a==='pwLogin'){S.err='';S.pwMode=true;renderLogin();}
+  else if(a==='otpLogin'){S.err='';S.pwMode=false;renderLogin();}
+  else if(a==='otpBack'){S.err='';S.otp.step='email';renderAdminLogin();}
   else if(a==='logout')logout();
   else if(a==='coCustom'){S.su.coMode='custom';renderCoPicker();}
   else if(a==='coSearch'){S.su.coMode='search';renderCoPicker();}
@@ -1139,6 +1220,8 @@ document.addEventListener('click',async(e)=>{
   else if(a==='saveMem')saveMember();
   else if(a==='newVendorAcc')openVendorCreate();
   else if(a==='newVendor')openVendor('new');
+  else if(a==='newAdminInv')openAdminInvite();
+  else if(a==='saveAdminInv')saveAdminInvite();
   else if(a==='saveVendor')saveVendor();
   else if(a==='delVendor')delVendor();
   else if(a==='createVendorAcc')createVendorAccount();
@@ -1194,6 +1277,7 @@ document.addEventListener('change',(e)=>{
 document.addEventListener('submit',(e)=>{
   e.preventDefault();
   if(e.target.id==='loginForm')doLogin($('li-id').value,$('li-pw').value);
+  else if(e.target.id==='otpForm'){if(S.otp&&S.otp.step==='code')verifyOtp();else sendOtp();}
   else if(e.target.id==='signupForm')doSignup();
   else if(e.target.id==='appForm')submitForm();
 });

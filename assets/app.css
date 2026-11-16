@@ -274,3 +274,14 @@ table.full tr:hover td.first{background:var(--accent-soft)}
 .tag.pg-hold{color:var(--warn)}
 .tag.pg-cxl{color:var(--danger)}
 .adminbox .kv{margin:0}
+.fhint{font-size:12px;color:var(--ink-3);line-height:1.5}
+.tbar{border:1px solid var(--line-2);background:var(--surface-2);border-radius:10px;padding:10px 12px 8px;display:flex;flex-direction:column;gap:6px;user-select:none;-webkit-user-select:none}
+.tb-head{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:var(--ink-2)}
+.tb-head b{font-size:14px;color:var(--ink);font-variant-numeric:tabular-nums}
+.tb-track{position:relative;height:32px;margin:0 9px;border-radius:6px;background:repeating-linear-gradient(90deg,var(--surface) 0 calc(10% - 1px),var(--line-2) calc(10% - 1px) 10%);border:1px solid var(--line);cursor:crosshair;touch-action:none}
+.tb-sel{position:absolute;top:0;bottom:0;background:var(--accent-soft);border:1px solid var(--accent);border-radius:4px}
+.tb-h{position:absolute;top:50%;width:18px;height:36px;margin-left:-9px;transform:translateY(-50%);border-radius:6px;border:2px solid var(--accent);background:var(--surface);cursor:ew-resize;padding:0}
+.tb-h:focus-visible{outline:3px solid var(--focus);outline-offset:1px}
+.tb-ticks{position:relative;height:14px;margin:0 9px;font-size:11px;color:var(--ink-3)}
+.tb-ticks span{position:absolute;transform:translateX(-50%);white-space:nowrap}
+.tb-hint{font-size:11px;color:var(--ink-3)}

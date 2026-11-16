@@ -27,8 +27,15 @@ const KIND={new:'신규 접수',changed:'신청 변경',status:'상태 변경',a
 /* 주요 제약사 목록(샘플) — 공식 등록 목록으로 교체하세요 */
 const PHARMA=['GC녹십자','HK이노엔','JW중외제약','SK케미칼','경동제약','경보제약','고려제약','광동제약','구주제약','국제약품','대우제약','대웅바이오','대웅제약','대원제약','대한뉴팜','대한약품','대화제약','동구바이오제약','동국제약','동성제약','동아에스티','동화약품','마더스제약','명인제약','바이넥스','보령','부광약품','비씨월드제약','삼아제약','삼일제약','삼진제약','삼천당제약','서울제약','셀트리온제약','신일제약','신풍제약','아주약품','안국약품','알리코제약','알보젠코리아','영진약품','우리들제약','위더스제약','유나이티드제약','유니메드제약','유한양행','이연제약','일동제약','일양약품','제일약품','조아제약','종근당','종근당바이오','진양제약','코오롱제약','테라젠이텍스','하나제약','한국글로벌제약','한국맥널티','한국유나이티드제약','한국콜마','한국파마','한국프라임제약','한독','한림제약','한미약품','한올바이오파마','한풍제약','현대약품','환인제약','휴온스','휴텍스제약',
 '길리어드사이언스코리아','바이엘코리아','사노피-아벤티스 코리아','암젠코리아','한국MSD','한국노바티스','한국노보노디스크제약','한국다케다제약','한국로슈','한국릴리','한국먼디파마','한국메나리니','한국베링거인겔하임','한국비아트리스','한국세르비에','한국아스텔라스제약','한국아스트라제네카','한국애브비','한국얀센','한국에자이','한국오츠카제약','한국유씨비제약','한국쿄와기린','한국페링제약','한국화이자제약','한국BMS제약','한국GSK','한국머크'];
-const ADMMAP={time:'time_text',cid:'cid',surveyDist:'survey_dist',vendor:'vendor',channel:'channel',manager:'manager',pmInternal:'pm_internal',applicants:'applicants',attendees:'attendees',surveyParticipants:'survey_participants',privacy:'privacy',questions:'questions',replay:'replay',basePrice:'base_price',surveyPay:'survey_pay',surveyBill:'survey_bill',finalPrice:'final_price'};
+const ADMMAP={time:'time_text',cid:'cid',surveyDist:'survey_dist',vendor:'vendor',channel:'channel',manager:'manager',pmInternal:'pm_internal',applicants:'applicants',attendees:'attendees',surveyParticipants:'survey_participants',privacy:'privacy',questions:'questions',replay:'replay',place:'place',surveyPaid:'survey_paid',basePrice:'base_price',surveyPay:'survey_pay',surveyBill:'survey_bill',finalPrice:'final_price'};
 const ADMNUM=new Set(['applicants','attendees','surveyParticipants','basePrice','surveyPay','surveyBill','finalPrice']);
+const ADMSEL={replay:[['','미정'],['제공','제공'],['미제공','미제공']],surveyPaid:[['','미정'],['Y','Y (지급)'],['N','N (미지급)']]};
+function admField(pre,id,label,ph,val){
+  if(ADMSEL[id]){const o=ADMSEL[id].slice();if(val&&!o.some(x=>x[0]===val))o.push([val,val]);
+    return '<div class="fld"><label for="'+pre+id+'">'+label+'</label><select id="'+pre+id+'">'+o.map(([v,l])=>'<option value="'+esc(v)+'"'+(v===val?' selected':'')+'>'+esc(l)+'</option>').join('')+'</select></div>';}
+  return '<div class="fld"><label for="'+pre+id+'">'+label+'</label><input id="'+pre+id+'"'+(ADMNUM.has(id)?' type="number" inputmode="numeric" min="0"':'')+' placeholder="'+esc(ph||'')+'" value="'+esc(val)+'"></div>';
+}
+function vendorSelect(idAttr,cur){return '<select id="'+idAttr+'"><option value="">미배정</option>'+S.vendors.map(v=>'<option value="'+v.id+'"'+(v.id===cur?' selected':'')+'>'+esc(v.name)+'</option>').join('')+'</select>';}
 
 let sb=null;
 const S={vendors:[],vpoll:null,mem:{list:[],q:'',role:'all',st:'all',loaded:false},memDrawer:null,me:null,user:null,view:'login',tab:'cal',y:0,m:0,apps:{},locks:new Set(),sel:null,mode:null,form:null,editing:false,confirmCancel:false,notis:[],chan:null,err:'',busy:false,
@@ -133,7 +140,7 @@ let refreshT=null;
 function scheduleRefresh(){clearTimeout(refreshT);refreshT=setTimeout(refreshApps,250);}
 function fromVendorRow(r){
   const adm={};Object.keys(ADMMAP).forEach(k=>{adm[k]='';});
-  adm.time=r.time_text||'';adm.cid=r.cid||'';adm.channel=r.channel||'';adm.manager=r.manager||'';adm.pmInternal=r.pm_internal||'';adm.surveyDist=r.survey_dist||'';adm.replay=r.replay||'';
+  adm.time=r.time_text||'';adm.cid=r.cid||'';adm.channel=r.channel||'';adm.place=r.place||'';adm.manager=r.manager||'';adm.pmInternal=r.pm_internal||'';adm.surveyDist=r.survey_dist||'';adm.replay=r.replay||'';
   return{id:r.slot_key,key:r.slot_key,date:r.event_date,meal:r.meal,slot:r.slot,company:r.company,userId:null,applicant:'',status:r.status,acad:r.acad,type:r.type,mode:r.mode,cat:r.category||'',
     leadItem:r.lead_item||'',item:r.item||'',title:r.title,topic:r.topic||'',speakers:Array.isArray(r.speakers)?r.speakers:[],recruit:r.recruit==null?'':String(r.recruit),surveyOn:!!r.survey_on,survey:r.survey||'',
     pm:r.pm||'',adjustNote:r.adjust_note||'',adminRegistered:false,priceList:null,vendorId:null,startTime:r.start_time||'',endTime:r.end_time||'',progress:r.progress||'진행예정',surveyStatus:r.survey_status||'',adm};
@@ -211,7 +218,7 @@ function renderTop(){
   if(S.me){
     const unread=S.notis.filter(n=>!n.read).length;
     const tab=(id,label,extra)=>'<button type="button" data-tab="'+id+'"'+(S.tab===id?' aria-current="page"':'')+'>'+label+(extra||'')+'</button>';
-    h+='<nav class="tabs" aria-label="메뉴">'+(APP==='admin'?tab('cal','일정 관리')+tab('all','전체 신청 현황')+tab('members','회원 관리'):isVendor()?tab('cal','배정 일정')+tab('mine','배정 목록'):tab('cal','일정 신청')+tab('mine','내 신청 현황'))+tab('noti','알림',unread?'<span class="badge">'+unread+'</span>':'')+'</nav>';
+    h+='<nav class="tabs" aria-label="메뉴">'+(APP==='admin'?tab('cal','일정 관리')+tab('all','전체 신청 현황')+tab('vendors','진행업체')+tab('members','회원 관리'):isVendor()?tab('cal','배정 일정')+tab('mine','배정 목록'):tab('cal','일정 신청')+tab('mine','내 신청 현황'))+tab('noti','알림',unread?'<span class="badge">'+unread+'</span>':'')+'</nav>';
     h+='<div class="who"><span class="co">'+esc(S.me.company)+'</span><span>'+esc(S.me.name)+' 님</span>'+(isAdmin()?'<span class="role">관리자</span>':'')+(isVendor()?'<span class="role" style="border-color:#60A5FA;color:#BFDBFE">외주사</span>':'')+'<button type="button" class="btn-ghost-bar" data-act="logout">로그아웃</button></div>';
   }
   $('topbar').innerHTML=h;
@@ -337,6 +344,7 @@ function renderApp(){
   }else if(S.tab==='mine')renderMine();
   else if(S.tab==='all')renderLedgerShell();
   else if(S.tab==='members')renderMembersShell();
+  else if(S.tab==='vendors')renderVendorsPage();
   else renderNoti();
 }
 function renderLegend(){
@@ -423,7 +431,78 @@ function renderPanel(){
   else if(S.mode==='detail')h+=detailHtml();
   else h+='<div class="center"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><strong>세미나 확정</strong><span>다른 소속의 일정입니다. 상세 내용은 공개되지 않습니다.</span></div>';
   el.innerHTML=h;
-  if(isForm){renderCatPicker();if(!S.catsLoaded)loadCats();}
+  if(isForm){renderCatPicker();if(!S.catsLoaded)loadCats();syncTbar();}
+}
+/* ---------- 시간 드래그 선택 (관리자) ---------- */
+const TB_WIN={L:[600,900],D:[1020,1320]};
+const toMin=t=>{const m=/^(\d{1,2}):(\d{2})$/.exec(t||'');return m?Number(m[1])*60+Number(m[2]):null;};
+const toHM=m=>pad(Math.floor(m/60))+':'+pad(m%60);
+function tbWin(f,meal){let [a,b]=TB_WIN[meal]||[540,1320];const s=toMin(f.startTime),e=toMin(f.endTime);if(s!=null&&s<a)a=Math.floor(s/60)*60;if(e!=null&&e>b)b=Math.ceil(e/60)*60;return[a,b];}
+function tbarHtml(f,meal){
+  const [a,b]=tbWin(f,meal);let ticks='';
+  for(let m=a;m<=b;m+=60)ticks+='<span style="left:'+((m-a)/(b-a)*100)+'%">'+(m/60)+'시</span>';
+  return '<div class="tbar" id="tbar" data-a="'+a+'" data-b="'+b+'"><div class="tb-head"><span>시간 드래그 선택</span><b id="tb-lab"></b></div>'
+   +'<div class="tb-track" id="tb-track"><div class="tb-sel" id="tb-sel"></div>'
+   +'<button type="button" class="tb-h" id="tb-hs" data-h="s" role="slider" aria-label="시작 시간"></button><button type="button" class="tb-h" id="tb-he" data-h="e" role="slider" aria-label="종료 시간"></button></div>'
+   +'<div class="tb-ticks">'+ticks+'</div><span class="tb-hint">막대를 끌어 시간대를 고르거나 양 끝 손잡이를 움직이세요 (5분 단위, 방향키로 미세 조정)</span></div>';
+}
+function syncTbar(){
+  const tb=$('tbar');if(!tb||!S.form)return;const a=Number(tb.dataset.a),b=Number(tb.dataset.b);
+  const s=toMin(S.form.startTime),e=toMin(S.form.endTime);const pct=m=>Math.max(0,Math.min(100,(m-a)/(b-a)*100));
+  const sel=$('tb-sel'),hs=$('tb-hs'),he=$('tb-he');
+  if(s==null||e==null){sel.style.display='none';hs.style.display='none';he.style.display='none';$('tb-lab').textContent='미선택';return;}
+  sel.style.display=hs.style.display=he.style.display='';
+  sel.style.left=pct(s)+'%';sel.style.width=Math.max(0,pct(e)-pct(s))+'%';hs.style.left=pct(s)+'%';he.style.left=pct(e)+'%';
+  hs.setAttribute('aria-valuetext',S.form.startTime);he.setAttribute('aria-valuetext',S.form.endTime);
+  $('tb-lab').textContent=S.form.startTime+' ~ '+S.form.endTime+' ('+(e-s)+'분)';
+}
+function setTimes(s,e){
+  S.form.startTime=toHM(s);S.form.endTime=toHM(e);
+  if($('f-st'))$('f-st').value=S.form.startTime;if($('f-et'))$('f-et').value=S.form.endTime;syncTbar();
+}
+let TB=null;
+function tbMinAt(x){const tr=$('tb-track'),tb=$('tbar');const r=tr.getBoundingClientRect();const a=Number(tb.dataset.a),b=Number(tb.dataset.b);
+  const m=a+Math.max(0,Math.min(1,(x-r.left)/r.width))*(b-a);return Math.round(m/5)*5;}
+document.addEventListener('pointerdown',(e)=>{
+  const tr=e.target.closest&&e.target.closest('#tb-track');if(!tr||!S.form)return;e.preventDefault();
+  const h=e.target.closest('.tb-h');const m=tbMinAt(e.clientX);
+  TB={mode:h?h.dataset.h:'new',anchor:m,id:e.pointerId};try{tr.setPointerCapture(e.pointerId);}catch(x){}
+  if(!h)setTimes(m,m+5);
+});
+document.addEventListener('pointermove',(e)=>{
+  if(!TB||!$('tb-track'))return;const m=tbMinAt(e.clientX);let s=toMin(S.form.startTime),en=toMin(S.form.endTime);
+  if(TB.mode==='s')s=Math.min(m,en-5);else if(TB.mode==='e')en=Math.max(m,s+5);else{s=Math.min(TB.anchor,m);en=Math.max(TB.anchor,m);if(en-s<5)en=s+5;}
+  setTimes(s,en);
+});
+document.addEventListener('pointerup',()=>{if(TB){TB=null;if($('price'))$('price').innerHTML=priceHtml();}});
+document.addEventListener('keydown',(e)=>{
+  const h=e.target.closest&&e.target.closest('.tb-h');if(!h||!S.form)return;
+  const d={ArrowLeft:-5,ArrowDown:-5,ArrowRight:5,ArrowUp:5}[e.key];if(!d)return;e.preventDefault();
+  const st=e.shiftKey?d*6:d;let s=toMin(S.form.startTime),en=toMin(S.form.endTime);if(s==null||en==null)return;
+  if(h.dataset.h==='s')s=Math.max(0,Math.min(s+st,en-5));else en=Math.min(1435,Math.max(en+st,s+5));setTimes(s,en);
+});
+
+/* ---------- 연자 자동 구분: '노경철 교수(강동경희대병원)' ---------- */
+function splitPeople(str){
+  const out=[];let cur='',depth=0;
+  for(const ch of String(str||'')){
+    if('(（['.includes(ch))depth++;else if(')）]'.includes(ch))depth=Math.max(0,depth-1);
+    if(depth===0&&(ch===','||ch==='，'||ch===';'||ch==='\n'||ch==='/')){if(cur.trim())out.push(cur.trim());cur='';}else cur+=ch;
+  }
+  if(cur.trim())out.push(cur.trim());return out;
+}
+function parsePerson(t){const m=/^\s*(.+?)\s*[(（\[]\s*(.*?)\s*[)）\]]\s*$/.exec(t||'');return m?{spk:m[1].trim(),aff:m[2].trim()}:{spk:String(t||'').trim(),aff:''};}
+function autoSplitSpeaker(i,val){
+  const items=splitPeople(val);if(!items.length)return false;
+  const hasParen=/[(（\[]/.test(val);if(items.length===1&&!hasParen)return false;
+  const sp=S.form.speakers;let over=0;
+  items.forEach((it,k)=>{const p=parsePerson(it);const j=i+k;
+    if(j>=MAX_SPK){over++;return;}
+    if(!sp[j])sp[j]={spk:'',aff:'',topic:''};sp[j].spk=p.spk;if(p.aff)sp[j].aff=p.aff;});
+  renderPanel();
+  if(over)toast('연자는 최대 '+MAX_SPK+'명까지 입력할 수 있어 '+over+'명은 제외했습니다.');
+  else if(items.length>1)toast(items.length+'명의 연자를 나눠 입력했습니다.');
+  return true;
 }
 function chairOptLabel(s,i){return (i+1)+'번 연자 겸임'+(s.spk.trim()?' · '+s.spk.trim():'');}
 function resetCatUI(){S.cat={q:'',kind:'질환',mode:'search'};}
@@ -473,6 +552,7 @@ function formHtml(){
    +'<div class="fld"><label for="f-mode">송출형태</label><select id="f-mode" data-f="mode">'+opt(MODES,f.mode)+'</select></div></div>';
   h+='<div class="row2"><div class="fld"><label for="f-st">시작 시간 <span class="req-mark">*</span></label><input id="f-st" type="time" step="300" data-f="startTime" value="'+esc(f.startTime)+'"></div>'
    +'<div class="fld"><label for="f-et">종료 시간 <span class="req-mark">*</span></label><input id="f-et" type="time" step="300" data-f="endTime" value="'+esc(f.endTime)+'"></div></div>';
+  if(isAdmin())h+=tbarHtml(f,S.sel.split('_')[1]);
   h+='<div class="row2"><div class="fld"><label for="f-co">회사</label><input id="f-co" data-f="company" value="'+esc(f.company)+'"'+(isAdmin()&&!S.editing?' placeholder="신청 회사명" list="co-list"':' readonly')+'>'+(isAdmin()?'<datalist id="co-list">'+PHARMA.concat(S.customCos).map(c=>'<option value="'+esc(c)+'"></option>').join('')+'</datalist>':'')+'</div>'
    +'<div class="fld"><label for="f-lead">리드 품목</label><input id="f-lead" data-f="leadItem" placeholder="대표 품목" value="'+esc(f.leadItem)+'"></div></div>';
   h+='<div class="box"><span class="lbl">카테고리 <span style="font-weight:400;color:var(--ink-3)">· 질환별 또는 진료과</span></span><div id="catPicker" class="copicker"></div></div>';
@@ -496,6 +576,7 @@ function formHtml(){
     if(sym)h+='<div class="sprow sptopic"><span class="no"></span><div class="fld" style="flex:1 1 0"><label for="st-'+i+'">'+(i+1)+'번 연자 주제</label><input id="st-'+i+'" data-sp="'+i+'" data-spf="topic" placeholder="발표 주제" value="'+esc(s.topic||'')+'"></div><span class="sp"></span></div>';
     h+='</div>';
   });
+  h+='<span class="fhint">‘노경철 교수(강동경희대병원)’처럼 연자 칸에 입력하면 소속이 자동으로 나뉩니다. 여러 명은 쉼표로 구분해 한 번에 넣을 수 있습니다.</span>';
   if(f.speakers.length<MAX_SPK)h+='<button type="button" class="btn dashed" data-act="addSpk">+ 연자 추가</button>';
   h+='</div>';
   if(sym){
@@ -528,7 +609,7 @@ function detailHtml(){
   if(a.adjustNote)h+='<div class="note adj">'+esc(a.adjustNote)+'</div>';
   const sp=speakersText(a,'\n')||'-';
   const rows=[['진행 시간',timeText(a)||'-'],['웨비나 진행',a.progress],['설문 진행',surveyStText(a)],['학술 구분',a.acad],['회사',a.company],['신청자',a.applicant||'-'],['카테고리',catLabel(a.cat)||'-'],['리드 품목',a.leadItem||'-'],['품목',a.item||'-'],['행사명',a.title],['연제',a.topic||'-'],[isSympo(a)?'좌장 · 연자 · 주제':'연자 · 소속',sp],['모집 인원',a.recruit?fmtN(a.recruit)+'명':'-'],['심화설문',a.surveyOn?'신청 · '+a.survey:'미신청'],['담당PM',a.pm||'-']];
-  if(isAdmin())rows.push(['배정 외주사',vendorName(a.vendorId)||'미배정']);
+  if(isAdmin())rows.push(['진행업체',vendorName(a.vendorId)||'미배정']);
   h+='<dl class="kv">'+rows.map(r=>'<div><dt>'+r[0]+'</dt><dd>'+esc(r[1])+'</dd></div>').join('')+'</dl>';
   h+='<div class="note info" style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><span>예상 금액</span><b style="font-size:18px;font-variant-numeric:tabular-nums">'+p+'</b></div>';
   const mineOwn=!isAdmin()&&!a.adminRegistered&&(a.status==='req'||a.status==='adj');
@@ -546,17 +627,20 @@ function detailHtml(){
      +'<div class="row2"><div class="fld"><label for="adm-st">신청 상태</label><select id="adm-st">'+STATUS_ORDER.map(k=>'<option value="'+k+'"'+(k===a.status?' selected':'')+'>'+ST[k].label+'</option>').join('')+'</select></div>'
      +'<div class="fld"><label for="adm-pg">웨비나 진행</label><select id="adm-pg">'+opt(PROGRESS,a.progress)+'</select></div></div>'
      +'<div class="row2"><div class="fld"><label for="adm-ss">설문 진행</label><select id="adm-ss"><option value="">'+(a.surveyOn?'준비 전':'해당 없음')+'</option>'+opt(SURVEY_ST,a.surveyStatus)+'</select></div>'
-     +'<div class="fld"><label for="adm-cid">CID</label><input id="adm-cid" value="'+esc(a.adm.cid)+'"></div></div>'
-     +'<div class="fld"><label for="adm-mgr">행사 담당자</label><input id="adm-mgr" placeholder="이름 / 연락처" value="'+esc(a.adm.manager)+'"></div>'
+     +'<div class="fld"><label for="adm-vendor">진행업체</label>'+vendorSelect('adm-vendor',a.vendorId)+'</div></div>'
+     +'<div class="row2">'+admField('ad-','cid','CID','',a.adm.cid)+admField('ad-','manager','행사 담당자','이름 / 연락처',a.adm.manager)+'</div>'
      +'<div class="fld"><label for="adm-note">조정 · 안내 메모</label><textarea id="adm-note" placeholder="조정 사유나 안내 내용 (신청자 화면에 표시)">'+esc(a.adjustNote||'')+'</textarea></div>'
-     +'<span style="font-size:12px;color:var(--ink-3)">신청 상태 · 웨비나 진행 · 설문 진행이 바뀌면 신청자에게 알림이 갑니다. CID · 담당자는 관리자만 봅니다.</span>'
-     +'<button type="button" class="btn primary" data-act="admSave">운영 정보 저장</button></div>';
-    const res=[['채널',a.adm.channel],['설문 배포',a.adm.surveyDist],['신청자 수',a.adm.applicants?fmtN(a.adm.applicants)+'명':''],['참석자 수',a.adm.attendees?fmtN(a.adm.attendees)+'명':''],['설문 참여자 수',a.adm.surveyParticipants?fmtN(a.adm.surveyParticipants)+'명':''],['개인정보동의',a.adm.privacy],['질문',a.adm.questions],['다시보기',a.adm.replay]];
+     +'<span style="font-size:12px;color:var(--ink-3)">신청 상태 · 웨비나 진행 · 설문 진행이 바뀌면 신청자에게, 진행업체를 배정하면 해당 업체 계정에 알림이 갑니다. 진행업체 등록은 ‘진행업체’ 메뉴.</span></div>';
+    h+='<div class="adminbox"><span class="lbl">운영 결과</span>'
+     +'<div class="row2">'+admField('ad-','channel','채널','예) 줌 / 유튜브',a.adm.channel)+admField('ad-','place','장소','예) 스튜디오',a.adm.place)+'</div>'
+     +'<div class="row2">'+admField('ad-','applicants','신청자 수','',a.adm.applicants)+admField('ad-','attendees','참석자 수','',a.adm.attendees)+'</div>'
+     +'<div class="row2">'+admField('ad-','surveyParticipants','설문 참여자 수','',a.adm.surveyParticipants)+admField('ad-','questions','질문','예) 12건',a.adm.questions)+'</div>'
+     +'<div class="row2">'+admField('ad-','replay','다시보기 여부','',a.adm.replay)+admField('ad-','surveyPaid','심화설문 지급 여부','',a.adm.surveyPaid)+'</div>'
+     +'<button type="button" class="btn primary" data-act="admSave">운영 관리 · 결과 저장</button></div>';
     const bp=basePrice(a),fp=finalPrice(a);
     const fin=[['기본 금액',typeof bp==='number'?won(bp):(bp||'')],['심화설문 지급',a.adm.surveyPay!==''?won(Number(a.adm.surveyPay)):''],['심화설문 청구',a.adm.surveyBill!==''?won(Number(a.adm.surveyBill)):''],['최종 금액',fp!==''?won(fp):'']];
-    h+='<div class="adminbox"><span class="lbl">운영 결과</span><dl class="kv">'+res.map(r=>'<div><dt>'+r[0]+'</dt><dd>'+esc(r[1]||'-')+'</dd></div>').join('')+'</dl>'
-     +'<span class="lbl">정산</span><dl class="kv">'+fin.map(r=>'<div><dt>'+r[0]+'</dt><dd>'+esc(r[1]||'-')+'</dd></div>').join('')+'</dl>'
-     +'<button type="button" class="btn" data-rec="'+S.sel+'">운영 결과 · 정산 입력</button></div>';
+    h+='<div class="adminbox"><span class="lbl">정산</span><dl class="kv">'+fin.map(r=>'<div><dt>'+r[0]+'</dt><dd>'+esc(r[1]||'-')+'</dd></div>').join('')+'</dl>'
+     +'<button type="button" class="btn" data-rec="'+S.sel+'">정산 · 전체 기록 입력</button></div>';
   }
   return h+'</div>';
 }
@@ -588,15 +672,23 @@ async function submitForm(){
   toast(was?'수정 내용을 저장했습니다.':(isAdmin()?'일정을 등록했습니다.':'신청이 접수되었습니다.'));
   renderCal();renderPanel();renderSummary();
 }
+const AD_FIELDS=['cid','manager','channel','place','applicants','attendees','surveyParticipants','questions','replay','surveyPaid'];
 async function adminSave(){
-  const a=S.apps[S.sel];const st=$('adm-st').value,note=$('adm-note').value.trim(),pg=$('adm-pg').value,ss=$('adm-ss').value,cid=$('adm-cid').value.trim(),mgr=$('adm-mgr').value.trim();
-  if(cid!==a.adm.cid||mgr!==a.adm.manager){
-    const r0=await sb.from('application_admin').upsert({application_id:a.id,cid,manager:mgr});
-    if(r0.error){toast(errMsg(r0.error,'CID · 담당자를 저장하지 못했습니다.'));return;}
+  const a=S.apps[S.sel];const st=$('adm-st').value,note=$('adm-note').value.trim(),pg=$('adm-pg').value,ss=$('adm-ss').value;
+  const vid=$('adm-vendor').value===''?null:Number($('adm-vendor').value);
+  const patch={application_id:a.id};let dirty=false;
+  for(const id of AD_FIELDS){const v=$('ad-'+id).value.trim();
+    if(ADMNUM.has(id)){if(v!==''&&!(Number(v)>=0)){toast('숫자 항목에는 0 이상의 숫자만 입력하세요.');$('ad-'+id).focus();return;}patch[ADMMAP[id]]=v===''?null:Number(v);}
+    else patch[ADMMAP[id]]=v;
+    if(String(v)!==String(a.adm[id]))dirty=true;}
+  if(vid!==a.vendorId){patch.vendor=vid?vendorName(vid):'';dirty=true;}
+  if(dirty){
+    const r0=await sb.from('application_admin').upsert(patch);
+    if(r0.error){toast(errMsg(r0.error,'운영 정보를 저장하지 못했습니다.'));return;}
   }
   const ch=st!==a.status||pg!==a.progress||ss!==a.surveyStatus;
-  if(ch||note!==a.adjustNote){
-    const r=await sb.from('applications').update({status:st,adjust_note:note,progress:pg,survey_status:ss}).eq('id',a.id);
+  if(ch||note!==a.adjustNote||vid!==a.vendorId){
+    const r=await sb.from('applications').update({status:st,adjust_note:note,progress:pg,survey_status:ss,vendor_id:vid}).eq('id',a.id);
     if(r.error){toast(errMsg(r.error,'저장하지 못했습니다. 다시 시도하세요.'));return;}
   }
   toast(ch?'저장했습니다. 신청자에게 알림이 갑니다.':'저장했습니다.');scheduleRefresh();
@@ -619,7 +711,7 @@ function vendorDetailHtml(){
   if(a.adjustNote)h+='<div class="note adj">'+esc(a.adjustNote)+'</div>';
   const sp=speakersText(a,'\n')||'-';
   const rows=[['회사',a.company],['행사명',a.title],['연제',a.topic||'-'],[isSympo(a)?'좌장 · 연자 · 주제':'연자 · 소속',sp],['카테고리',catLabel(a.cat)||'-'],['리드 품목',a.leadItem||'-'],['품목',a.item||'-'],['모집 인원',a.recruit?fmtN(a.recruit)+'명':'-'],['심화설문',a.surveyOn?'신청 · '+a.survey:'미신청'],['신청 PM',a.pm||'-'],
-    ['진행 시간',timeText(a)||'-'],['웨비나 진행',a.progress],['설문 진행',surveyStText(a)],['CID',a.adm.cid||'-'],['채널',a.adm.channel||'-'],['행사 담당자',a.adm.manager||'-'],['PM(내부)',a.adm.pmInternal||'-'],['설문 배포',a.adm.surveyDist||'-'],['다시보기',a.adm.replay||'-']];
+    ['진행 시간',timeText(a)||'-'],['웨비나 진행',a.progress],['설문 진행',surveyStText(a)],['CID',a.adm.cid||'-'],['채널',a.adm.channel||'-'],['장소',a.adm.place||'-'],['행사 담당자',a.adm.manager||'-'],['PM(내부)',a.adm.pmInternal||'-'],['설문 배포',a.adm.surveyDist||'-'],['다시보기',a.adm.replay||'-']];
   h+='<dl class="kv">'+rows.map(r=>'<div><dt>'+r[0]+'</dt><dd>'+esc(r[1])+'</dd></div>').join('')+'</dl>';
   h+='<div class="note info">외주사 계정은 조회만 가능합니다. 변경이 필요하면 닥터빌 운영팀에 요청하세요.</div>';
   return h+'</div>';
@@ -659,12 +751,12 @@ const NUMS=new Set(['모집 인원','신청자 수','참석자 수','설문 참�
 const WRAP=new Set(['행사명','연제','강사명(소속)']);
 const COLS=[
  ['no.',(a,k,i)=>i+1],['상태',a=>ST[a.status].label],['웨비나 진행',a=>a.progress],['일시',a=>a.date],['시간',a=>timeText(a)||((a.meal==='L'?'점심':'저녁')+' '+a.slot+'번')],
- ['CID',a=>a.adm.cid],['설문 진행',a=>surveyStText(a)],['설문 배포',a=>a.adm.surveyDist],['유형',a=>a.type],['송출형태',a=>a.mode],['업체',a=>vendorName(a.vendorId)||a.adm.vendor],['채널',a=>a.adm.channel],['행사 담당자',a=>a.adm.manager],
+ ['CID',a=>a.adm.cid],['설문 진행',a=>surveyStText(a)],['설문 배포',a=>a.adm.surveyDist],['유형',a=>a.type],['송출형태',a=>a.mode],['진행업체',a=>vendorName(a.vendorId)||a.adm.vendor],['채널',a=>a.adm.channel],['장소',a=>a.adm.place],['행사 담당자',a=>a.adm.manager],
  ['구분',a=>a.acad],['회사',a=>a.company],['카테고리',a=>catLabel(a.cat)],['리드 품목',a=>a.leadItem],['품목',a=>a.item],['PM(내부)',a=>a.adm.pmInternal],
  ['행사명',a=>a.title],['연제',a=>a.topic],['강사명(소속)',a=>speakersText(a,'; ')],['PM',a=>a.pm],['설문 유형',a=>a.surveyOn?a.survey:'미신청'],
  ['모집 인원',a=>nOrBlank(a.recruit)],['신청자 수',a=>nOrBlank(a.adm.applicants)],['참석자 수',a=>nOrBlank(a.adm.attendees)],['설문 참여자 수',a=>nOrBlank(a.adm.surveyParticipants)],
  ['개인정보동의',a=>a.adm.privacy],['질문',a=>a.adm.questions],['다시보기',a=>a.adm.replay],
- ['기본 금액',a=>basePrice(a)],['심화설문 지급',a=>nOrBlank(a.adm.surveyPay)],['심화설문 청구',a=>nOrBlank(a.adm.surveyBill)],['최종 금액',a=>finalPrice(a)]
+ ['심화설문 지급 여부',a=>a.adm.surveyPaid],['기본 금액',a=>basePrice(a)],['심화설문 지급',a=>nOrBlank(a.adm.surveyPay)],['심화설문 청구',a=>nOrBlank(a.adm.surveyBill)],['최종 금액',a=>finalPrice(a)]
 ];
 function ledgerRows(){
   const al=S.al;let from='',to='';
@@ -713,9 +805,9 @@ function renderLedger(){
   el.innerHTML=h;
 }
 const ADMF=[
- ['운영 정보',[['cid','CID',''],['surveyDist','설문 배포','예) 배포 / 미배포'],['vendor','업체',''],['channel','채널',''],['manager','행사 담당자','이름 / 연락처'],['pmInternal','PM(내부)','']]],
- ['행사 결과',[['applicants','신청자 수',''],['attendees','참석자 수',''],['surveyParticipants','설문 참여자 수',''],['privacy','개인정보동의','예) 동의 1,240명'],['questions','질문','예) 12건'],['replay','다시보기','예) 제공 / 미제공 / URL']]],
- ['정산',[['basePrice','기본 금액',''],['surveyPay','심화설문 지급',''],['surveyBill','심화설문 청구',''],['finalPrice','최종 금액','']]]
+ ['운영 정보',[['cid','CID',''],['vendor','진행업체',''],['channel','채널','예) 줌 / 유튜브 / 닥터빌'],['place','장소','예) 스튜디오 / 호텔 연회장'],['manager','행사 담당자','이름 / 연락처'],['pmInternal','PM(내부)',''],['surveyDist','설문 배포','예) 배포 / 미배포']]],
+ ['행사 결과',[['applicants','신청자 수',''],['attendees','참석자 수',''],['surveyParticipants','설문 참여자 수',''],['questions','질문','예) 12건'],['replay','다시보기 여부',''],['privacy','개인정보동의','예) 동의 1,240명']]],
+ ['정산',[['surveyPaid','심화설문 지급 여부',''],['basePrice','기본 금액',''],['surveyPay','심화설문 지급',''],['surveyBill','심화설문 청구',''],['finalPrice','최종 금액','']]]
 ];
 function openRecord(key){
   const a=S.apps[key];if(!a)return;S.drawer=key;
@@ -728,13 +820,13 @@ function openRecord(key){
    +'<div class="fld"><label for="rc-ss">설문 진행</label><select id="rc-ss"><option value="">'+(a.surveyOn?'준비 전':'해당 없음')+'</option>'+opt(SURVEY_ST,a.surveyStatus)+'</select></div></div>'
    +'<div style="font-size:13px;color:var(--ink-2)">진행 시간 <b>'+esc(timeText(a)||'미입력')+'</b> · 변경은 일정 상세의 ‘내용 수정’에서</div>'
    +'<div class="fld"><label for="rc-note">조정 · 안내 메모 (신청자에게 표시)</label><textarea id="rc-note">'+esc(a.adjustNote||'')+'</textarea></div>'
-   +'<span style="font-size:12px;color:var(--ink-3)">상태가 바뀌면 신청자에게, 외주사를 배정하면 해당 외주사 계정에 자동으로 알림이 갑니다.</span></div>';
+   +'<span style="font-size:12px;color:var(--ink-3)">상태가 바뀌면 신청자에게, 진행업체를 배정하면 해당 업체 계정에 자동으로 알림이 갑니다. 진행업체는 ‘진행업체’ 메뉴에서 등록합니다.</span></div>';
   ADMF.forEach(([sec,fs])=>{
     h+='<div class="sec"><h2>'+sec+'</h2><div class="row2">';
     fs.forEach(([id,l,ph])=>{
       let p=ph;if(id==='basePrice')p='비우면 자동: '+(autoBase||'없음');if(id==='finalPrice')p='비우면 기본 금액 + 심화설문 청구';
-      if(id==='vendor'){h+='<div class="fld"><label for="rc-vendor">업체 (배정 외주사)</label><select id="rc-vendor"><option value="">미배정</option>'+S.vendors.map(v=>'<option value="'+v.id+'"'+(v.id===a.vendorId?' selected':'')+'>'+esc(v.name)+'</option>').join('')+'</select></div>';return;}
-      h+='<div class="fld"><label for="rc-'+id+'">'+l+'</label><input id="rc-'+id+'"'+(ADMNUM.has(id)?' type="number" inputmode="numeric"':'')+' placeholder="'+esc(p)+'" value="'+esc(a.adm[id])+'"></div>';
+      if(id==='vendor'){h+='<div class="fld"><label for="rc-vendor">진행업체 (배정)</label>'+vendorSelect('rc-vendor',a.vendorId)+'</div>';return;}
+      h+=admField('rc-',id,l,p,a.adm[id]);
     });
     h+='</div></div>';
   });
@@ -742,7 +834,48 @@ function openRecord(key){
   h+='<div class="foot"><button type="button" class="btn primary" style="flex:1" data-act="saveRec">기록 저장</button><button type="button" class="btn" data-act="closeRec">닫기</button></div></div></div>';
   $('drawerHost').innerHTML=h;$('rc-st').focus();
 }
-function closeRecord(){S.drawer=null;S.memDrawer=null;$('drawerHost').innerHTML='';if(S.tab==='all')renderLedger();if(S.tab==='members')renderMembers();}
+function closeRecord(){S.drawer=null;S.memDrawer=null;$('drawerHost').innerHTML='';if(S.tab==='all')renderLedger();if(S.tab==='members')renderMembers();if(S.tab==='vendors')renderVendorsPage();}
+/* ---------- admin: 진행업체 ---------- */
+function renderVendorsPage(){
+  if(!S.mem.loaded&&!S.mem.loading){S.mem.loading=true;loadMembers().then(()=>{S.mem.loading=false;if(S.tab==='vendors')renderVendorsPage();});}
+  let h='<div class="toolbar"><div><h1>진행업체</h1><p class="sub">세미나를 진행하는 업체(외주사)를 등록 · 관리합니다. 일정 상세의 ‘운영 관리’에서 업체를 배정하면 해당 업체 계정에 알림이 갑니다.</p></div>'
+   +'<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn primary sm" style="height:44px" data-act="newVendor">+ 진행업체 등록</button><button type="button" class="btn" style="height:44px" data-act="newVendorAcc">+ 업체 계정 생성</button></div></div>';
+  if(!S.vendors.length)h+='<div class="listbox"><div class="empty">등록된 진행업체가 없습니다. ‘+ 진행업체 등록’으로 추가하세요.</div></div>';
+  else{
+    h+='<div class="listbox"><table class="list" style="min-width:760px"><thead><tr><th>업체명</th><th>담당자</th><th>연락처</th><th>메모</th><th>계정</th><th>배정 세미나</th><th>등록일</th><th></th></tr></thead><tbody>'
+     +S.vendors.map(v=>'<tr><td><b>'+esc(v.name)+'</b></td><td>'+esc(v.contact_name||'-')+'</td><td>'+esc(v.contact_phone||'-')+'</td><td class="wrapcell">'+esc(v.memo||'-')+'</td><td class="num">'+(S.mem.loaded?S.mem.list.filter(p=>p.vendor_id===v.id).length:'…')+'</td><td class="num">'+Object.values(S.apps).filter(a=>a.vendorId===v.id).length+'</td><td class="num">'+fmtDate(v.created_at)+'</td><td><button type="button" class="btn sm" data-vend="'+v.id+'">수정</button></td></tr>').join('')
+     +'</tbody></table></div>';
+  }
+  $('main').innerHTML=h;
+}
+function openVendor(id){
+  const v=id==='new'?{name:'',contact_name:'',contact_phone:'',memo:''}:S.vendors.find(x=>x.id===id);if(!v)return;S.memDrawer='vendor';S.vEdit=id;
+  const accs=S.mem.loaded?S.mem.list.filter(p=>p.vendor_id===v.id).length:0,asg=id==='new'?0:Object.values(S.apps).filter(a=>a.vendorId===v.id).length;
+  let h='<div class="scrim" id="scrim"><div class="drawer" role="dialog" aria-modal="true" aria-labelledby="vd-t">'
+   +'<div class="dh2"><div><div style="font-size:12px;color:var(--accent);font-weight:500">진행업체</div><div id="vd-t" style="font-size:17px;font-weight:700">'+(id==='new'?'진행업체 등록':esc(v.name))+'</div></div><button type="button" class="iconbtn" data-act="closeRec" aria-label="닫기"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>'
+   +'<div class="sec"><div class="fld"><label for="vd-name">업체명 <span class="req-mark">*</span></label><input id="vd-name" value="'+esc(v.name)+'"></div>'
+   +'<div class="row2"><div class="fld"><label for="vd-cn">담당자</label><input id="vd-cn" value="'+esc(v.contact_name||'')+'"></div><div class="fld"><label for="vd-cp">연락처</label><input id="vd-cp" placeholder="전화 / 이메일" value="'+esc(v.contact_phone||'')+'"></div></div>'
+   +'<div class="fld"><label for="vd-memo">메모</label><textarea id="vd-memo" placeholder="계약 · 진행 범위 등 내부 메모">'+esc(v.memo||'')+'</textarea></div>'
+   +'<div class="err" role="alert" id="vd-err" hidden></div>'
+   +(id!=='new'?'<span style="font-size:12px;color:var(--ink-3)">계정 '+accs+'개 · 배정 세미나 '+asg+'건'+(accs||asg?' — 계정이나 배정 세미나가 있으면 삭제할 수 없습니다.':'')+'</span>':'')+'</div>'
+   +'<div class="foot"><button type="button" class="btn primary" style="flex:1" data-act="saveVendor">저장</button>'+(id!=='new'&&!accs&&!asg?'<button type="button" class="btn danger" data-act="delVendor">삭제</button>':'')+'<button type="button" class="btn" data-act="closeRec">닫기</button></div></div></div>';
+  $('drawerHost').innerHTML=h;$('vd-name').focus();
+}
+async function saveVendor(){
+  const id=S.vEdit;const v=x=>($(x).value||'').trim();
+  const row={name:v('vd-name'),contact_name:v('vd-cn'),contact_phone:v('vd-cp'),memo:v('vd-memo')};
+  const fail=m=>{const e=$('vd-err');e.textContent=m;e.hidden=false;};
+  if(row.name.length<2)return fail('업체명을 2글자 이상 입력하세요.');
+  if(S.vendors.some(x=>x.name===row.name&&x.id!==id))return fail('이미 등록된 업체명입니다.');
+  const r=id==='new'?await sb.from('vendors').insert(row).select().single():await sb.from('vendors').update(row).eq('id',id).select().single();
+  if(r.error)return fail(errMsg(r.error,'저장하지 못했습니다.'));
+  await loadVendors();toast(id==='new'?'진행업체를 등록했습니다.':'저장했습니다.');closeRecord();
+}
+async function delVendor(){
+  const id=S.vEdit;const r=await sb.from('vendors').delete().eq('id',id);
+  if(r.error){toast(errMsg(r.error,'삭제하지 못했습니다.'));return;}
+  await loadVendors();toast('삭제했습니다.');closeRecord();
+}
 async function saveRecord(){
   const key=S.drawer;const a=S.apps[key];if(!a)return;
   const adm={application_id:a.id};
@@ -968,6 +1101,7 @@ document.addEventListener('click',async(e)=>{
   if(t.dataset.goto){gotoSlot(t.dataset.goto);return;}
   if(t.dataset.rec){openRecord(t.dataset.rec);return;}
   if(t.dataset.mem){openMember(t.dataset.mem);return;}
+  if(t.dataset.vend){openVendor(Number(t.dataset.vend));return;}
   if(t.dataset.co){S.su.coSel=t.dataset.co;S.su.coMode='search';renderCoPicker();return;}
   if(t.dataset.scope){S.al.scope=t.dataset.scope;renderLedgerShell();return;}
   if(t.dataset.pick){const [f,v]=t.dataset.pick.split(':');S.form[f]=v;renderPanel();return;}
@@ -1004,6 +1138,9 @@ document.addEventListener('click',async(e)=>{
   else if(a==='saveRec')saveRecord();
   else if(a==='saveMem')saveMember();
   else if(a==='newVendorAcc')openVendorCreate();
+  else if(a==='newVendor')openVendor('new');
+  else if(a==='saveVendor')saveVendor();
+  else if(a==='delVendor')delVendor();
   else if(a==='createVendorAcc')createVendorAccount();
   else if(a==='copyVendorAcc'){try{await navigator.clipboard.writeText(S.vcCopy||'');toast('복사했습니다.');}catch(err){toast('복사하지 못했습니다. 직접 선택해 복사하세요.');}}
   else if(a==='reloadMem')loadMembers();
@@ -1025,7 +1162,7 @@ document.addEventListener('input',(e)=>{
   if(!S.form)return;
   if(t.id==='f-type'){setType(t.value);return;}
   if(t.id==='f-chair'){setChair(t.value);return;}
-  if(t.dataset.f){S.form[t.dataset.f]=t.value;if(['type','mode','recruit'].includes(t.dataset.f)&&$('price'))$('price').innerHTML=priceHtml();}
+  if(t.dataset.f){S.form[t.dataset.f]=t.value;if(['type','mode','recruit'].includes(t.dataset.f)&&$('price'))$('price').innerHTML=priceHtml();if(t.dataset.f==='startTime'||t.dataset.f==='endTime')syncTbar();}
   else if(t.dataset.sp){const i=Number(t.dataset.sp);S.form.speakers[i][t.dataset.spf]=t.value;if(t.dataset.spf==='spk'){const o=document.querySelector('#f-chair option[value="s'+i+'"]');if(o)o.textContent=chairOptLabel(S.form.speakers[i],i);}}
   else if(t.dataset.it){S.form.items[Number(t.dataset.it)]=t.value;}
   else if(t.dataset.ch){S.form.chair[t.dataset.ch]=t.value;}
@@ -1049,6 +1186,8 @@ document.addEventListener('change',(e)=>{
   if(t.id==='al-to'){S.al.to=t.value;renderLedger();return;}
   if(t.id==='f-type'){setType(t.value);return;}
   if(t.id==='f-chair'){setChair(t.value);return;}
+  if(S.form&&t.dataset&&t.dataset.spf==='spk'&&t.dataset.sp!=null){autoSplitSpeaker(Number(t.dataset.sp),t.value);return;}
+  if(S.form&&t.id==='ch-spk'){const p=parsePerson(t.value);if(p.aff){S.form.chair.spk=p.spk;S.form.chair.aff=p.aff;renderPanel();}return;}
   if(t.id==='f-survey'){S.form.surveyOn=t.checked;if(!t.checked)S.form.survey='';renderPanel();}
   else if(t.dataset&&t.dataset.f&&S.form){S.form[t.dataset.f]=t.value;if($('price'))$('price').innerHTML=priceHtml();}
 });

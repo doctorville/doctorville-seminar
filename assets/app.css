@@ -285,3 +285,4 @@ table.full tr:hover td.first{background:var(--accent-soft)}
 .tb-ticks{position:relative;height:14px;margin:0 9px;font-size:11px;color:var(--ink-3)}
 .tb-ticks span{position:absolute;transform:translateX(-50%);white-space:nowrap}
 .tb-hint{font-size:11px;color:var(--ink-3)}
+.otpin{font-size:22px;letter-spacing:.35em;text-align:center;font-variant-numeric:tabular-nums}

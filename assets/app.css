@@ -286,3 +286,10 @@ table.full tr:hover td.first{background:var(--accent-soft)}
 .tb-ticks span{position:absolute;transform:translateX(-50%);white-space:nowrap}
 .tb-hint{font-size:11px;color:var(--ink-3)}
 .otpin{font-size:22px;letter-spacing:.35em;text-align:center;font-variant-numeric:tabular-nums}
+
+/* 반응형 프레임: 폭 제한 없음, 데스크톱(1024px 이상)은 화면 너비의 90% · 상세 패널은 화면 높이 안에서 스크롤 */
+.wrap{max-width:none;width:100%}
+@media (min-width:1024px){
+  .wrap{width:90%;padding-left:0;padding-right:0}
+  aside.panel{position:sticky;top:16px;max-height:calc(100vh - 32px);overflow-y:auto;overscroll-behavior:contain}
+}

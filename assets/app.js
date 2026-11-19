@@ -262,7 +262,7 @@ async function sendOtp(){
   const o=S.otp;const email=(($('otp-mail')&&$('otp-mail').value)||o.email||'').trim().toLowerCase();
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){S.err='메일 주소를 정확히 입력하세요.';renderAdminLogin();return;}
   o.email=email;const b=$('otp-btn');if(b)b.disabled=true;
-  const r=await sb.auth.signInWithOtp({email,options:{shouldCreateUser:true}});
+  const r=await sb.auth.signInWithOtp({email,options:{shouldCreateUser:true,data:{admin_otp:true}}});
   if(r.error){S.err=otpErr(r.error);renderAdminLogin();return;}
   S.err='';o.step='code';o.until=Date.now()+60000;renderAdminLogin();toast('인증번호를 보냈습니다.');
 }
@@ -272,6 +272,8 @@ async function verifyOtp(){
   $('otp-btn').disabled=true;
   const r=await sb.auth.verifyOtp({email:o.email,token:code,type:'email'});
   if(r.error||!r.data||!r.data.user){S.err=otpErr(r.error||{message:'invalid'});renderAdminLogin();return;}
+  const c=await sb.rpc('claim_admin');
+  if(c.error){await sb.auth.signOut();S.err=errMsg(c.error,'관리자 권한을 확인하지 못했습니다.');o.step='email';renderAdminLogin();return;}
   S.err='';S.otp=null;clearInterval(S.otpT);await enter(r.data.user);
 }
 function renderLogin(){
@@ -343,7 +345,8 @@ async function doLogin(id,pw){
   await enter(r.data.user);
 }
 async function enter(user){
-  const p=await loadProfile(user.id);
+  let p=await loadProfile(user.id);
+  if(!p&&APP==='admin'){const c=await sb.rpc('claim_admin');if(!c.error)p=await loadProfile(user.id);}
   if(!p){await sb.auth.signOut();S.err='회원 정보를 찾을 수 없습니다. 관리자에게 문의하세요.';renderLogin();return;}
   if(p.status==='suspended'){await sb.auth.signOut();S.err='이용이 정지된 계정입니다. 운영팀에 문의하세요.';renderLogin();return;}
   if(APP==='admin'&&p.role!=='admin'){await sb.auth.signOut();S.err='관리자 권한이 없는 계정입니다.';renderLogin();return;}

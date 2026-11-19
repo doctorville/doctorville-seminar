@@ -102,7 +102,7 @@ anon 키는 공개되어도 되는 키이며, 데이터 보호는 RLS 규칙이 
 ## 관리자 로그인 (메일 OTP, 007)
 - 관리자 사이트는 **메일 주소 + 8자리 인증번호**로 로그인합니다. 회원 · 외주사는 기존 아이디/비밀번호 그대로입니다.
 - 관리자 추가: 회원 관리 → **+ 관리자 초대**(메일 · 이름). 초대된 메일로 처음 인증하면 관리자 계정이 만들어집니다. 초기 관리자: ojungin@mcircle.biz
-- 보호: 초대된 메일이라도 비밀번호로 가입한 계정은 관리자가 되지 않음(비밀번호 없는 OTP 계정만). 아이디 계정은 관리자로 지정 불가.
+- 보호: 관리자 프로필은 메일 OTP로 인증한 세션에서만 만들어지고(`claim_admin`), 메일 로그인 관리자는 OTP 세션에서만 관리자 권한이 적용됨(`is_admin`). 아이디 계정은 관리자로 지정 불가. (`008_admin_otp_fix.sql`)
 - **필수 설정**: Supabase → Authentication → Emails → SMTP Settings 에 Custom SMTP 등록(기본 발송은 Supabase 팀원 메일로만 가고 템플릿 수정 불가) → Templates ‘Magic link or OTP’ · ‘Confirm sign up’ 본문에 `{{ .Token }}` 넣기. Email OTP length = 8.
 - 메일 발송 확인 전까지 관리자 로그인 화면에 ‘아이디로 로그인(임시)’이 있습니다. 확인 후 `assets/app.js` 의 `ADMIN_PW_FALLBACK` 을 false 로 바꾸고 기존 `admin` 계정은 정지 처리하세요.
 - 기존 프로젝트에는 `supabase/migrations/007_admin_otp.sql` 을 SQL Editor 에서 실행 (`schema.sql` 에도 포함됨)
